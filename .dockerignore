@@ -1,8 +1,11 @@
-node_modules
-dist
 .git
 .github
 .netlify
 .pnpm-store
+node_modules
+dist
+coverage
+experiments
+npm-debug.log*
 test/visual/__image_snapshots__/__diff_output__
 test/visual/__image_snapshots__/__received_output__
