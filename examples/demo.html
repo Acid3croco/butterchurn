@@ -40,11 +40,19 @@
     #presetCycleLength {
       width: 50px;
     }
+
+    #tabCaptureStatus {
+      margin-left: 0.5rem;
+    }
+
+    #stopTabCapture {
+      display: none;
+    }
   </style>
   <link rel="stylesheet" href="https://unpkg.com/normalize.css/normalize.css" />
 
   <script type="module">
-    import butterchurn from 'https://unpkg.com/butterchurn@3.0.0-beta.5/dist/butterchurn.js';
+    import butterchurn from '../dist/butterchurn.min.js';
 
     $(function() {
       var visualizer = null;
@@ -52,6 +60,8 @@
       var audioContext = null;
       var sourceNode = null;
       var delayedAudible = null;
+      var tabCaptureStream = null;
+      var tabCaptureSourceNode = null;
       var cycleInterval = null;
       var presets = {};
       var presetKeys = [];
@@ -81,11 +91,15 @@
         visualizer.render();
       }
 
-      function playBufferSource(buffer) {
+      function startRenderingOnce() {
         if (!rendering) {
           rendering = true;
           startRenderer();
         }
+      }
+
+      function playBufferSource(buffer) {
+        startRenderingOnce();
 
         if (sourceNode) {
           sourceNode.disconnect();
@@ -133,7 +147,72 @@
         sourceNode.connect(gainNode);
 
         visualizer.connectAudio(gainNode);
-        startRenderer();
+        startRenderingOnce();
+      }
+
+      function setTabCaptureStatus(message, isError = false) {
+        $('#tabCaptureStatus').text(message).css('color', isError ? '#b00020' : 'inherit');
+      }
+
+      function stopTabCapture() {
+        if (tabCaptureSourceNode) {
+          tabCaptureSourceNode.disconnect();
+          tabCaptureSourceNode = null;
+        }
+
+        if (tabCaptureStream) {
+          tabCaptureStream.getTracks().forEach((track) => track.stop());
+          tabCaptureStream = null;
+        }
+
+        $('#captureTab').prop('disabled', false);
+        $('#stopTabCapture').hide();
+        setTabCaptureStatus('');
+      }
+
+      async function captureAnotherTab() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+          setTabCaptureStatus('Tab audio capture is not supported by this browser.', true);
+          return;
+        }
+
+        stopTabCapture();
+        $('#captureTab').prop('disabled', true);
+        setTabCaptureStatus('Choose a browser tab and enable “Share tab audio”.');
+
+        try {
+          const stream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: true,
+            preferCurrentTab: false,
+            selfBrowserSurface: 'exclude',
+            surfaceSwitching: 'include',
+          });
+          const audioTrack = stream.getAudioTracks()[0];
+
+          if (!audioTrack) {
+            stream.getTracks().forEach((track) => track.stop());
+            throw new Error('No audio was shared. Select a browser tab and enable “Share tab audio”.');
+          }
+
+          tabCaptureStream = stream;
+          tabCaptureSourceNode = audioContext.createMediaStreamSource(stream);
+          visualizer.connectAudio(tabCaptureSourceNode);
+          await audioContext.resume();
+          startRenderingOnce();
+
+          stream.getTracks().forEach((track) => {
+            track.addEventListener('ended', stopTabCapture, { once: true });
+          });
+
+          $('#stopTabCapture').show();
+          setTabCaptureStatus(`Visualizing: ${audioTrack.label || 'shared tab audio'}`);
+        } catch (error) {
+          stopTabCapture();
+          if (error.name !== 'NotAllowedError') {
+            setTabCaptureStatus(error.message || 'Could not capture tab audio.', true);
+          }
+        }
       }
 
       function nextPreset(blendTime = 5.7) {
@@ -226,6 +305,9 @@
         });
       });
 
+      $('#captureTab').click(captureAnotherTab);
+      $('#stopTabCapture').click(stopTabCapture);
+
       function initPlayer() {
         audioContext = new AudioContext();
 
@@ -270,6 +352,11 @@
       </div>
       <div id="micSelect">
         <span>Use Mic</span>
+      </div>
+      <div id="tabCaptureSelect">
+        <button id="captureTab" type="button">Capture another tab</button>
+        <button id="stopTabCapture" type="button">Stop capture</button>
+        <span id="tabCaptureStatus" role="status" aria-live="polite"></span>
       </div>
     </div>
     <div id="presetControls">
