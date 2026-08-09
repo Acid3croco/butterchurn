@@ -326,10 +326,6 @@
         transform: scaleY(var(--meter-3, 0.12));
       }
 
-      .signal-meter span:nth-child(4) {
-        transform: scaleY(var(--meter-4, 0.12));
-      }
-
       .source-state[data-signal="live"] .signal-meter span {
         background: var(--success);
         box-shadow: 0 0 10px rgba(125, 244, 189, 0.72);
@@ -745,7 +741,7 @@
           $("#signalReadout").text(
             active ? "Connected · no signal yet" : "No source connected"
           );
-          setMeterLevels([0.12, 0.12, 0.12, 0.12]);
+          setMeterLevels([0.12, 0.12, 0.12]);
           smoothedSignal = 0;
         }
 
@@ -769,13 +765,19 @@
           var rms = Math.sqrt(energy / signalSamples.length);
           smoothedSignal = Math.max(rms, smoothedSignal * 0.82);
           signalAnalyser.getByteFrequencyData(signalFrequencies);
+          var frequencyResolution =
+            audioContext.sampleRate / signalAnalyser.fftSize;
           var bands = [
-            [0, 5],
-            [5, 14],
-            [14, 34],
-            [34, 72],
+            [20, 320],
+            [320, 2800],
+            [2800, 11025],
           ];
-          var meterLevels = bands.map(([start, end]) => {
+          var meterLevels = bands.map(([startHz, endHz]) => {
+            var start = Math.max(0, Math.floor(startHz / frequencyResolution));
+            var end = Math.min(
+              signalFrequencies.length,
+              Math.ceil(endHz / frequencyResolution)
+            );
             var total = 0;
             for (var bin = start; bin < end; bin++) {
               total += signalFrequencies[bin];
@@ -1135,7 +1137,7 @@
         function initPlayer() {
           audioContext = new AudioContext();
           signalAnalyser = audioContext.createAnalyser();
-          signalAnalyser.fftSize = 256;
+          signalAnalyser.fftSize = 1024;
           signalAnalyser.smoothingTimeConstant = 0.72;
           signalSamples = new Uint8Array(signalAnalyser.fftSize);
           signalFrequencies = new Uint8Array(signalAnalyser.frequencyBinCount);
@@ -1248,8 +1250,13 @@
             data-signal="idle"
           >
             <span class="signal-orbit" aria-hidden="true"
-              ><span class="signal-meter" id="signalMeter">
-                <span></span><span></span><span></span><span></span> </span
+              ><span
+                class="signal-meter"
+                id="signalMeter"
+                title="Bass · mids · treble"
+                aria-label="Bass, mids, and treble activity"
+              >
+                <span></span><span></span><span></span> </span
             ></span>
             <span class="source-state-copy">
               <span class="eyebrow">Audio source</span>
