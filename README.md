@@ -2,7 +2,6 @@
 
 Butterchurn is a WebGL implementation of the Milkdrop Visualizer
 
-
 ## [Try it out](https://butterchurnviz.com)
 
 [![Butterchurn Screenshot](preview.png)](https://butterchurnviz.com)
@@ -14,8 +13,15 @@ choose a browser tab in the sharing dialog and keep **Share tab audio** enabled.
 The captured audio is processed locally by the Web Audio API and is never sent
 to a server.
 
+The deployed demo loads the complete preset collection shipped by
+`butterchurn-presets`, including the image-textured and MilkDrop 1 packs. The
+preset bundle and its texture data are served directly from the container.
+
 Tab capture requires HTTPS (or localhost), an explicit user click, and a fresh
 browser permission for each capture session.
+
+See [the Coolify deployment guide](docs/deployment-coolify.md) for the required
+Dockerfile, port, domain, HTTPS, and post-deploy settings.
 
 ## Usage
 
@@ -77,22 +83,21 @@ if (isButterchurnSupported()) {
 ```
 
 ## Integrations
-* [Webamp](https://github.com/captbaritone/webamp), the fantastic reimplementation of Winamp 2.9 in HTML5 and Javascript, built by [captbaritone](https://github.com/captbaritone)
-* [Butterchurn Extension](https://chrome.google.com/webstore/detail/butterchurn-music-visuali/jfdmelgfepjcmlljpdeajbiiibkehnih), use Butterchurn to visualize the audio from any page
-* [Rekt Networks](https://nightride.fm/#Mathdrop), Live DJs, Archives & Exclusive Releases, built by [Zei](https://twitter.com/TheRektNetwork)
-* [mStream](http://mstream.io/), your personal music streaming server, built by [IrosTheBeggar](https://github.com/IrosTheBeggar)
-* [pasteur](https://www.pasteur.cc/), trippy videos generated from your music, built by [markneub](https://github.com/markneub)
-* [ChromeAudioVisualizerExtension](https://chrome.google.com/webstore/detail/audiovisualizer/bojhikphaecldnbdekplmadjkflgbkfh), put on some music and turn your browsing session into a party! built by [afreakk](https://github.com/afreakk)
-* [Karaoke Forever](https://www.karaoke-forever.com), an open karaoke party system, built by [bhj](https://github.com/bhj)
-* [Syqel](https://syqel.com/), the World's Best AI Powered Music Visualizer
 
+- [Webamp](https://github.com/captbaritone/webamp), the fantastic reimplementation of Winamp 2.9 in HTML5 and Javascript, built by [captbaritone](https://github.com/captbaritone)
+- [Butterchurn Extension](https://chrome.google.com/webstore/detail/butterchurn-music-visuali/jfdmelgfepjcmlljpdeajbiiibkehnih), use Butterchurn to visualize the audio from any page
+- [Rekt Networks](https://nightride.fm/#Mathdrop), Live DJs, Archives & Exclusive Releases, built by [Zei](https://twitter.com/TheRektNetwork)
+- [mStream](http://mstream.io/), your personal music streaming server, built by [IrosTheBeggar](https://github.com/IrosTheBeggar)
+- [pasteur](https://www.pasteur.cc/), trippy videos generated from your music, built by [markneub](https://github.com/markneub)
+- [ChromeAudioVisualizerExtension](https://chrome.google.com/webstore/detail/audiovisualizer/bojhikphaecldnbdekplmadjkflgbkfh), put on some music and turn your browsing session into a party! built by [afreakk](https://github.com/afreakk)
+- [Karaoke Forever](https://www.karaoke-forever.com), an open karaoke party system, built by [bhj](https://github.com/bhj)
+- [Syqel](https://syqel.com/), the World's Best AI Powered Music Visualizer
 
 ## Thanks
 
-* [Ryan Geiss](http://www.geisswerks.com/) for creating [MilkDrop](http://www.geisswerks.com/about_milkdrop.html)
-* Nullsoft for creating [Winamp](http://www.winamp.com/)
-* All the amazing preset creators, special thanks to [Flexi](https://twitter.com/Flexi23)
-
+- [Ryan Geiss](http://www.geisswerks.com/) for creating [MilkDrop](http://www.geisswerks.com/about_milkdrop.html)
+- Nullsoft for creating [Winamp](http://www.winamp.com/)
+- All the amazing preset creators, special thanks to [Flexi](https://twitter.com/Flexi23)
 
 ## License
 

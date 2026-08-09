@@ -1,372 +1,1168 @@
 <!DOCTYPE html>
-<head>
-  <meta charset="utf-8">
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <title>Butterchurn Demo</title>
-  <meta name="description" content="Butterchurn Demo Example">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A responsive Butterchurn music visualizer with local, microphone, and browser tab audio input."
+    />
+    <meta name="theme-color" content="#080b17" />
+    <title>Butterchurn — Live visualizer</title>
 
-  <!-- <script type="text/javascript" src="../dist/butterchurn.js"></script> -->
-  <script type="text/javascript" src="https://unpkg.com/lodash"></script>
-  <script type="text/javascript" src="https://unpkg.com/butterchurn-presets@3.0.0-beta.4/dist/base.min.js"></script>
-  <script type="text/javascript" src="https://unpkg.com/butterchurn-presets@3.0.0-beta.4/dist/extra.min.js"></script>
-  <script
-    src="https://code.jquery.com/jquery-3.1.1.min.js"
-    integrity="sha256-hVVnYaiADRTO2PzUGmuLJr8BLUSjGIZsDYGmIJLv2b8="
-    crossorigin="anonymous"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://unpkg.com/lodash"></script>
+    <script src="../vendor/butterchurn-presets/all.js"></script>
+    <script src="../vendor/butterchurn-presets/imageData.min.js"></script>
+    <script
+      src="https://code.jquery.com/jquery-3.1.1.min.js"
+      integrity="sha256-hVVnYaiADRTO2PzUGmuLJr8BLUSjGIZsDYGmIJLv2b8="
+      crossorigin="anonymous"
+    ></script>
 
-  <style>
-    #canvas:-moz-full-screen {
-      width: 100%;
-      height: 100%;
-    }
-    #canvas:-webkit-full-screen {
-      width: 100%;
-      height: 100%;
-    }
-    #canvas:-ms-fullscreen {
-      width: 100%;
-      height: 100%;
-    }
-    #canvas:fullscreen {
-      width: 100%;
-      height: 100%;
-    }
+    <style>
+      :root {
+        color-scheme: dark;
+        --void: #080b17;
+        --panel: rgba(15, 20, 39, 0.82);
+        --panel-strong: #11162a;
+        --line: rgba(225, 231, 255, 0.16);
+        --line-strong: rgba(225, 231, 255, 0.3);
+        --mist: #e9ecff;
+        --muted: #9aa3c2;
+        --ultraviolet: #6c63ff;
+        --cyan: #6ee7ff;
+        --plasma: #ff6bcb;
+        --danger: #ff8caa;
+        --success: #7df4bd;
+        --radius: 18px;
+        font-family: "Space Grotesk", system-ui, sans-serif;
+      }
 
-    #presetSelect {
-      max-width: 300px;
-    }
+      * {
+        box-sizing: border-box;
+      }
 
-    #presetCycleLength {
-      width: 50px;
-    }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: var(--void);
+        color: var(--mist);
+      }
 
-    #tabCaptureStatus {
-      margin-left: 0.5rem;
-    }
+      button,
+      input,
+      select {
+        font: inherit;
+      }
 
-    #stopTabCapture {
-      display: none;
-    }
-  </style>
-  <link rel="stylesheet" href="https://unpkg.com/normalize.css/normalize.css" />
+      button,
+      select,
+      input {
+        outline: none;
+      }
 
-  <script type="module">
-    import butterchurn from '../dist/butterchurn.min.js';
+      button:focus-visible,
+      select:focus-visible,
+      input:focus-visible {
+        box-shadow: 0 0 0 3px var(--void), 0 0 0 5px var(--cyan);
+      }
 
-    $(function() {
-      var visualizer = null;
-      var rendering = false;
-      var audioContext = null;
-      var sourceNode = null;
-      var delayedAudible = null;
-      var tabCaptureStream = null;
-      var tabCaptureSourceNode = null;
-      var cycleInterval = null;
-      var presets = {};
-      var presetKeys = [];
-      var presetIndexHist = [];
-      var presetIndex = 0;
-      var presetCycle = true;
-      var presetCycleLength = 15000;
-      var presetRandom = true;
-      var canvas = document.getElementById('canvas');
+      .stage {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        isolation: isolate;
+        background: radial-gradient(
+            circle at 80% 15%,
+            rgba(108, 99, 255, 0.25),
+            transparent 35%
+          ),
+          radial-gradient(
+            circle at 15% 80%,
+            rgba(255, 107, 203, 0.16),
+            transparent 30%
+          ),
+          var(--void);
+      }
 
-      function connectToAudioAnalyzer(sourceNode) {
-        if(delayedAudible) {
-          delayedAudible.disconnect();
+      #canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+
+      .stage::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        background: linear-gradient(
+          180deg,
+          rgba(8, 11, 23, 0.6),
+          transparent 28%,
+          transparent 64%,
+          rgba(8, 11, 23, 0.72)
+        );
+      }
+
+      .topbar,
+      .control-deck {
+        position: absolute;
+        z-index: 2;
+      }
+
+      .topbar {
+        top: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1.25rem 1.5rem;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 0.8rem;
+        min-width: 0;
+      }
+
+      .brand-mark {
+        width: 2rem;
+        height: 2rem;
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        border-radius: 50%;
+        background: conic-gradient(
+          from 210deg,
+          var(--cyan),
+          var(--ultraviolet),
+          var(--plasma),
+          var(--cyan)
+        );
+        box-shadow: inset 0 0 0 6px rgba(8, 11, 23, 0.62),
+          0 0 28px rgba(108, 99, 255, 0.35);
+      }
+
+      .brand-copy {
+        display: grid;
+        gap: 0.05rem;
+      }
+
+      .brand-name {
+        font-size: 1rem;
+        font-weight: 600;
+        letter-spacing: -0.025em;
+      }
+
+      .brand-subtitle,
+      .eyebrow,
+      .shortcut,
+      .status {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.68rem;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+
+      .brand-subtitle {
+        color: var(--muted);
+      }
+
+      .icon-button {
+        width: 2.5rem;
+        height: 2.5rem;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: rgba(12, 16, 31, 0.58);
+        color: var(--mist);
+        cursor: pointer;
+        backdrop-filter: blur(12px);
+        transition: border-color 160ms ease, background 160ms ease,
+          transform 160ms ease;
+      }
+
+      .icon-button:hover {
+        border-color: var(--line-strong);
+        background: rgba(28, 34, 59, 0.8);
+        transform: translateY(-1px);
+      }
+
+      .icon-button svg {
+        width: 1rem;
+        height: 1rem;
+      }
+
+      .control-deck {
+        left: 50%;
+        bottom: 1.25rem;
+        width: min(980px, calc(100% - 2rem));
+        transform: translateX(-50%);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+        box-shadow: 0 22px 70px rgba(0, 0, 0, 0.42),
+          inset 0 1px rgba(255, 255, 255, 0.04);
+        backdrop-filter: blur(24px) saturate(130%);
+        overflow: hidden;
+      }
+
+      .source-panel {
+        display: grid;
+        grid-template-columns: minmax(220px, 0.8fr) minmax(420px, 1.4fr);
+        align-items: stretch;
+      }
+
+      .source-state {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 1.1rem 1.25rem;
+        border-right: 1px solid var(--line);
+        overflow: hidden;
+      }
+
+      .signal-orbit {
+        position: relative;
+        width: 2.8rem;
+        height: 2.8rem;
+        flex: 0 0 auto;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--line-strong);
+        border-radius: 50%;
+      }
+
+      .signal-orbit::before,
+      .signal-orbit::after {
+        content: "";
+        position: absolute;
+        border-radius: inherit;
+        opacity: 0;
+      }
+
+      .signal-orbit::before {
+        inset: -5px;
+        border: 1px solid var(--cyan);
+      }
+
+      .signal-orbit::after {
+        inset: -10px;
+        border: 1px solid rgba(255, 107, 203, 0.65);
+      }
+
+      .source-state[data-active="true"] .signal-orbit::before,
+      .source-state[data-active="true"] .signal-orbit::after {
+        animation: signal 2.2s ease-out infinite;
+      }
+
+      .source-state[data-active="true"] .signal-orbit::after {
+        animation-delay: 0.45s;
+      }
+
+      .signal-dot {
+        width: 0.65rem;
+        height: 0.65rem;
+        border-radius: 50%;
+        background: var(--muted);
+        box-shadow: 0 0 0 4px rgba(154, 163, 194, 0.12);
+      }
+
+      .source-state[data-active="true"] .signal-dot {
+        background: var(--success);
+        box-shadow: 0 0 18px var(--success);
+      }
+
+      .source-state-copy {
+        min-width: 0;
+      }
+
+      .eyebrow {
+        color: var(--muted);
+        margin-bottom: 0.3rem;
+      }
+
+      .source-name {
+        margin: 0;
+        overflow: hidden;
+        color: var(--mist);
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .source-actions {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.55rem;
+        padding: 0.8rem;
+      }
+
+      .source-button {
+        min-height: 3.9rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.55rem;
+        padding: 0.65rem 0.8rem;
+        border: 1px solid transparent;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.055);
+        color: var(--mist);
+        font-size: 0.82rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 160ms ease, border-color 160ms ease,
+          transform 160ms ease;
+      }
+
+      .source-button:hover {
+        border-color: var(--line-strong);
+        background: rgba(255, 255, 255, 0.09);
+        transform: translateY(-1px);
+      }
+
+      .source-button[data-primary="true"] {
+        color: #0a0d19;
+        background: linear-gradient(115deg, var(--cyan), #b9bcff 58%, #f2b8e5);
+        box-shadow: 0 8px 24px rgba(108, 99, 255, 0.25);
+      }
+
+      .source-button[data-primary="true"]:hover {
+        border-color: rgba(255, 255, 255, 0.7);
+        background: linear-gradient(115deg, #9cf0ff, #ced0ff 58%, #ffc9ec);
+      }
+
+      .source-button:disabled {
+        opacity: 0.48;
+        cursor: wait;
+        transform: none;
+      }
+
+      .source-button svg {
+        width: 1rem;
+        height: 1rem;
+        flex: 0 0 auto;
+      }
+
+      .capture-feedback {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.65rem 1.25rem;
+        border-top: 1px solid var(--line);
+        background: rgba(7, 10, 22, 0.38);
+      }
+
+      .capture-feedback[data-visible="true"] {
+        display: flex;
+      }
+
+      .status {
+        color: var(--muted);
+        line-height: 1.5;
+        text-transform: none;
+      }
+
+      .status[data-tone="error"] {
+        color: var(--danger);
+      }
+
+      .status[data-tone="success"] {
+        color: var(--success);
+      }
+
+      .text-button {
+        padding: 0.45rem 0.7rem;
+        border: 0;
+        border-radius: 8px;
+        background: rgba(255, 140, 170, 0.12);
+        color: var(--danger);
+        font-size: 0.75rem;
+        cursor: pointer;
+      }
+
+      .preset-panel {
+        display: grid;
+        grid-template-columns: minmax(280px, 1fr) auto auto;
+        align-items: end;
+        gap: 1rem;
+        padding: 0.85rem 1.25rem 1rem;
+        border-top: 1px solid var(--line);
+      }
+
+      .field {
+        display: grid;
+        gap: 0.4rem;
+      }
+
+      .field label,
+      .toggle-label {
+        color: var(--muted);
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.65rem;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+
+      select,
+      input[type="number"] {
+        height: 2.4rem;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.055);
+        color: var(--mist);
+      }
+
+      select {
+        width: 100%;
+        padding: 0 2.3rem 0 0.75rem;
+        text-overflow: ellipsis;
+      }
+
+      .cycle-field {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        height: 2.4rem;
+      }
+
+      input[type="number"] {
+        width: 4.25rem;
+        padding: 0 0.55rem;
+      }
+
+      .toggle {
+        position: relative;
+        width: 2.5rem;
+        height: 1.4rem;
+        flex: 0 0 auto;
+      }
+
+      .toggle input {
+        position: absolute;
+        opacity: 0;
+      }
+
+      .toggle-track {
+        position: absolute;
+        inset: 0;
+        border: 1px solid var(--line-strong);
+        border-radius: 99px;
+        background: rgba(255, 255, 255, 0.07);
+        cursor: pointer;
+        transition: background 160ms ease;
+      }
+
+      .toggle-track::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 0.75rem;
+        height: 0.75rem;
+        border-radius: 50%;
+        background: var(--muted);
+        transition: transform 160ms ease, background 160ms ease;
+      }
+
+      .toggle input:checked + .toggle-track {
+        background: rgba(108, 99, 255, 0.35);
+      }
+
+      .toggle input:checked + .toggle-track::after {
+        background: var(--cyan);
+        transform: translateX(1.05rem);
+      }
+
+      .toggle input:focus-visible + .toggle-track {
+        box-shadow: 0 0 0 3px var(--void), 0 0 0 5px var(--cyan);
+      }
+
+      .shortcut {
+        align-self: center;
+        color: rgba(233, 236, 255, 0.55);
+        white-space: nowrap;
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      @keyframes signal {
+        0% {
+          opacity: 0.8;
+          transform: scale(0.78);
+        }
+        75%,
+        100% {
+          opacity: 0;
+          transform: scale(1.16);
+        }
+      }
+
+      @media (max-width: 760px) {
+        .topbar {
+          padding: 1rem;
         }
 
-        delayedAudible = audioContext.createDelay();
-        delayedAudible.delayTime.value = 0.26;
+        .brand-subtitle,
+        .shortcut {
+          display: none;
+        }
 
-        sourceNode.connect(delayedAudible)
-        delayedAudible.connect(audioContext.destination);
+        .control-deck {
+          bottom: 0.75rem;
+          width: calc(100% - 1rem);
+        }
 
-        visualizer.connectAudio(delayedAudible);
-      }
+        .source-panel {
+          grid-template-columns: 1fr;
+        }
 
-      function startRenderer() {
-        requestAnimationFrame(() => startRenderer());
-        visualizer.render();
-      }
+        .source-state {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+          padding: 0.75rem 1rem;
+        }
 
-      function startRenderingOnce() {
-        if (!rendering) {
-          rendering = true;
-          startRenderer();
+        .signal-orbit {
+          width: 2.25rem;
+          height: 2.25rem;
+        }
+
+        .source-actions {
+          gap: 0.4rem;
+          padding: 0.55rem;
+        }
+
+        .source-button {
+          min-height: 3.2rem;
+          flex-direction: column;
+          gap: 0.25rem;
+          padding: 0.45rem 0.25rem;
+          font-size: 0.7rem;
+        }
+
+        .preset-panel {
+          grid-template-columns: 1fr auto;
+          gap: 0.7rem;
+          padding: 0.7rem;
+        }
+
+        .preset-panel .field:first-child {
+          grid-column: 1 / -1;
         }
       }
 
-      function playBufferSource(buffer) {
-        startRenderingOnce();
-
-        if (sourceNode) {
-          sourceNode.disconnect();
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
         }
-
-        sourceNode = audioContext.createBufferSource();
-        sourceNode.buffer = buffer;
-        connectToAudioAnalyzer(sourceNode);
-
-        sourceNode.start(0);
       }
+    </style>
 
-      function loadLocalFiles(files, index = 0) {
-        audioContext.resume();
+    <script type="module">
+      import butterchurn from "../dist/butterchurn.min.js";
 
-        var reader = new FileReader();
-        reader.onload = (event) => {
-          audioContext.decodeAudioData(
-            event.target.result,
-            (buf) => {
-              playBufferSource(buf);
+      $(function () {
+        var visualizer = null;
+        var rendering = false;
+        var audioContext = null;
+        var activeVisualizerNode = null;
+        var sourceNode = null;
+        var delayedAudible = null;
+        var micStream = null;
+        var micSourceNode = null;
+        var tabCaptureStream = null;
+        var tabCaptureSourceNode = null;
+        var cycleInterval = null;
+        var presets = {};
+        var presetKeys = [];
+        var presetIndexHist = [];
+        var presetIndex = 0;
+        var presetCycle = true;
+        var presetCycleLength = 15000;
+        var presetRandom = true;
+        var resizeFrame = null;
+        var canvas = document.getElementById("canvas");
 
-              setTimeout(() => {
-                if (files.length > index + 1) {
-                  loadLocalFiles(files, index + 1);
-                } else {
-                  sourceNode.disconnect();
-                  sourceNode = null;
-                  $("#audioSelectWrapper").css('display', 'block');
-                }
-              }, buf.duration * 1000);
+        function setVisualizerInput(audioNode) {
+          if (activeVisualizerNode) {
+            try {
+              visualizer.disconnectAudio(activeVisualizerNode);
+            } catch (error) {
+              console.debug("Audio input was already disconnected.", error);
             }
+          }
+
+          activeVisualizerNode = audioNode;
+          if (activeVisualizerNode) {
+            visualizer.connectAudio(activeVisualizerNode);
+          }
+        }
+
+        function setSourceState(name, active) {
+          $("#activeSourceName").text(name || "Waiting for audio");
+          $("#sourceState").attr("data-active", active ? "true" : "false");
+        }
+
+        function setCaptureStatus(message, tone = "neutral", show = true) {
+          $("#tabCaptureStatus").text(message).attr("data-tone", tone);
+          $("#captureFeedback").attr(
+            "data-visible",
+            show && Boolean(message) ? "true" : "false"
           );
-        };
-
-        var file = files[index];
-        reader.readAsArrayBuffer(file);
-      }
-
-      function connectMicAudio(sourceNode, audioContext) {
-        audioContext.resume();
-
-        var gainNode = audioContext.createGain();
-        gainNode.gain.value = 1.25;
-        sourceNode.connect(gainNode);
-
-        visualizer.connectAudio(gainNode);
-        startRenderingOnce();
-      }
-
-      function setTabCaptureStatus(message, isError = false) {
-        $('#tabCaptureStatus').text(message).css('color', isError ? '#b00020' : 'inherit');
-      }
-
-      function stopTabCapture() {
-        if (tabCaptureSourceNode) {
-          tabCaptureSourceNode.disconnect();
-          tabCaptureSourceNode = null;
         }
 
-        if (tabCaptureStream) {
-          tabCaptureStream.getTracks().forEach((track) => track.stop());
-          tabCaptureStream = null;
+        function startRenderer() {
+          if (!rendering) return;
+          visualizer.render();
+          requestAnimationFrame(startRenderer);
         }
 
-        $('#captureTab').prop('disabled', false);
-        $('#stopTabCapture').hide();
-        setTabCaptureStatus('');
-      }
-
-      async function captureAnotherTab() {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-          setTabCaptureStatus('Tab audio capture is not supported by this browser.', true);
-          return;
+        function startRenderingOnce() {
+          if (!rendering) {
+            rendering = true;
+            requestAnimationFrame(startRenderer);
+          }
         }
 
-        stopTabCapture();
-        $('#captureTab').prop('disabled', true);
-        setTabCaptureStatus('Choose a browser tab and enable “Share tab audio”.');
+        function stopLocalAudio() {
+          if (sourceNode) {
+            try {
+              sourceNode.stop();
+            } catch (error) {
+              /* The buffer may already have ended. */
+            }
+            sourceNode.disconnect();
+            sourceNode = null;
+          }
+          if (delayedAudible) {
+            delayedAudible.disconnect();
+            delayedAudible = null;
+          }
+        }
 
-        try {
-          const stream = await navigator.mediaDevices.getDisplayMedia({
-            video: true,
-            audio: true,
-            preferCurrentTab: false,
-            selfBrowserSurface: 'exclude',
-            surfaceSwitching: 'include',
-          });
-          const audioTrack = stream.getAudioTracks()[0];
+        function stopMicCapture() {
+          if (micSourceNode) {
+            micSourceNode.disconnect();
+            micSourceNode = null;
+          }
+          if (micStream) {
+            micStream.getTracks().forEach((track) => track.stop());
+            micStream = null;
+          }
+        }
 
-          if (!audioTrack) {
+        function stopTabCapture(options = {}) {
+          var wasActive =
+            Boolean(tabCaptureSourceNode) &&
+            activeVisualizerNode === tabCaptureSourceNode;
+
+          if (wasActive) setVisualizerInput(null);
+          if (tabCaptureSourceNode) {
+            tabCaptureSourceNode.disconnect();
+            tabCaptureSourceNode = null;
+          }
+          if (tabCaptureStream) {
+            var stream = tabCaptureStream;
+            tabCaptureStream = null;
             stream.getTracks().forEach((track) => track.stop());
-            throw new Error('No audio was shared. Select a browser tab and enable “Share tab audio”.');
           }
 
-          tabCaptureStream = stream;
-          tabCaptureSourceNode = audioContext.createMediaStreamSource(stream);
-          visualizer.connectAudio(tabCaptureSourceNode);
-          await audioContext.resume();
-          startRenderingOnce();
+          $("#captureTab").prop("disabled", false);
+          $("#stopTabCapture").prop("hidden", true);
+          if (wasActive) setSourceState("", false);
+          if (!options.preserveStatus) setCaptureStatus("", "neutral", false);
+        }
 
-          stream.getTracks().forEach((track) => {
-            track.addEventListener('ended', stopTabCapture, { once: true });
+        function stopAllAudio() {
+          stopLocalAudio();
+          stopMicCapture();
+          stopTabCapture({ preserveStatus: true });
+          setVisualizerInput(null);
+        }
+
+        function playBufferSource(buffer, label) {
+          stopAllAudio();
+          sourceNode = audioContext.createBufferSource();
+          delayedAudible = audioContext.createDelay();
+          var currentSource = sourceNode;
+          var currentDelay = delayedAudible;
+          delayedAudible.delayTime.value = 0.26;
+          sourceNode.buffer = buffer;
+          sourceNode.connect(delayedAudible);
+          delayedAudible.connect(audioContext.destination);
+          setVisualizerInput(delayedAudible);
+          sourceNode.start(0);
+          currentSource.addEventListener(
+            "ended",
+            () => {
+              if (activeVisualizerNode === currentDelay) {
+                setVisualizerInput(null);
+                setSourceState("", false);
+              }
+              if (sourceNode === currentSource) sourceNode = null;
+              if (delayedAudible === currentDelay) {
+                currentDelay.disconnect();
+                delayedAudible = null;
+              }
+            },
+            { once: true }
+          );
+          setSourceState(label || "Local audio", true);
+          startRenderingOnce();
+          return currentSource;
+        }
+
+        function loadLocalFiles(files, index = 0) {
+          if (!files || !files.length) return;
+          audioContext.resume();
+
+          var file = files[index];
+          var reader = new FileReader();
+          reader.onerror = () =>
+            setCaptureStatus(`Could not read ${file.name}.`, "error");
+          reader.onload = (event) => {
+            audioContext.decodeAudioData(
+              event.target.result,
+              (buffer) => {
+                var playingSource = playBufferSource(buffer, file.name);
+                playingSource.addEventListener(
+                  "ended",
+                  () => {
+                    if (files.length > index + 1)
+                      loadLocalFiles(files, index + 1);
+                  },
+                  { once: true }
+                );
+              },
+              () =>
+                setCaptureStatus(
+                  `${file.name} is not a supported audio file.`,
+                  "error"
+                )
+            );
+          };
+          reader.readAsArrayBuffer(file);
+        }
+
+        async function captureMicrophone() {
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            setCaptureStatus(
+              "Microphone capture is not supported by this browser.",
+              "error"
+            );
+            return;
+          }
+
+          try {
+            var stream = await navigator.mediaDevices.getUserMedia({
+              audio: true,
+            });
+            stopAllAudio();
+            micStream = stream;
+            micSourceNode = audioContext.createMediaStreamSource(stream);
+            setVisualizerInput(micSourceNode);
+            await audioContext.resume();
+            setSourceState(
+              stream.getAudioTracks()[0]?.label || "Microphone",
+              true
+            );
+            setCaptureStatus("", "neutral", false);
+            startRenderingOnce();
+          } catch (error) {
+            setCaptureStatus(
+              error.name === "NotAllowedError"
+                ? "Microphone access was not granted."
+                : "Could not start the microphone.",
+              "error"
+            );
+          }
+        }
+
+        async function captureAnotherTab() {
+          if (!window.isSecureContext) {
+            setCaptureStatus("Tab capture needs HTTPS or localhost.", "error");
+            return;
+          }
+          if (
+            !navigator.mediaDevices ||
+            !navigator.mediaDevices.getDisplayMedia
+          ) {
+            setCaptureStatus(
+              "Tab audio capture is not supported by this browser.",
+              "error"
+            );
+            return;
+          }
+
+          stopTabCapture({ preserveStatus: true });
+          $("#captureTab").prop("disabled", true);
+          setCaptureStatus(
+            "Choose a browser tab and keep “Share tab audio” enabled."
+          );
+
+          try {
+            var stream = await navigator.mediaDevices.getDisplayMedia({
+              video: true,
+              audio: true,
+              preferCurrentTab: false,
+              selfBrowserSurface: "exclude",
+              surfaceSwitching: "include",
+            });
+            var audioTrack = stream.getAudioTracks()[0];
+
+            if (!audioTrack) {
+              stream.getTracks().forEach((track) => track.stop());
+              throw new Error(
+                "No audio was shared. Choose a tab and enable “Share tab audio”."
+              );
+            }
+
+            stopAllAudio();
+            tabCaptureStream = stream;
+            tabCaptureSourceNode = audioContext.createMediaStreamSource(stream);
+            setVisualizerInput(tabCaptureSourceNode);
+            await audioContext.resume();
+            startRenderingOnce();
+
+            stream
+              .getVideoTracks()[0]
+              ?.addEventListener("ended", () => stopTabCapture(), {
+                once: true,
+              });
+            $("#stopTabCapture").prop("hidden", false);
+            setSourceState(audioTrack.label || "Shared tab audio", true);
+            setCaptureStatus(
+              "Tab audio is live. Everything stays in this browser.",
+              "success"
+            );
+          } catch (error) {
+            stopTabCapture({ preserveStatus: true });
+            if (error.name === "NotAllowedError") {
+              setCaptureStatus("Tab capture was cancelled.", "neutral");
+            } else {
+              setCaptureStatus(
+                error.message || "Could not capture tab audio.",
+                "error"
+              );
+            }
+          }
+        }
+
+        function nextPreset(blendTime = 5.7) {
+          presetIndexHist.push(presetIndex);
+          presetIndex = presetRandom
+            ? Math.floor(Math.random() * presetKeys.length)
+            : (presetIndex + 1) % presetKeys.length;
+          visualizer.loadPreset(presets[presetKeys[presetIndex]], blendTime);
+          $("#presetSelect").val(presetIndex);
+        }
+
+        function prevPreset(blendTime = 5.7) {
+          presetIndex =
+            presetIndexHist.length > 0
+              ? presetIndexHist.pop()
+              : (presetIndex - 1 + presetKeys.length) % presetKeys.length;
+          visualizer.loadPreset(presets[presetKeys[presetIndex]], blendTime);
+          $("#presetSelect").val(presetIndex);
+        }
+
+        function restartCycleInterval() {
+          if (cycleInterval) clearInterval(cycleInterval);
+          cycleInterval = presetCycle
+            ? setInterval(() => nextPreset(2.7), presetCycleLength)
+            : null;
+        }
+
+        function resizeVisualizer() {
+          if (resizeFrame) cancelAnimationFrame(resizeFrame);
+          resizeFrame = requestAnimationFrame(() => {
+            visualizer.setRendererSize(window.innerWidth, window.innerHeight, {
+              pixelRatio: window.devicePixelRatio || 1,
+            });
+          });
+        }
+
+        $(document).keydown((event) => {
+          if (/^(INPUT|SELECT|BUTTON)$/.test(event.target.tagName)) return;
+          if (event.key === " " || event.key === "ArrowRight") {
+            event.preventDefault();
+            nextPreset();
+          } else if (event.key === "Backspace" || event.key === "ArrowLeft") {
+            event.preventDefault();
+            prevPreset();
+          }
+        });
+
+        $("#presetSelect").change(() => {
+          presetIndexHist.push(presetIndex);
+          presetIndex = parseInt($("#presetSelect").val(), 10);
+          visualizer.loadPreset(presets[presetKeys[presetIndex]], 5.7);
+        });
+        $("#presetCycle").change(() => {
+          presetCycle = $("#presetCycle").is(":checked");
+          restartCycleInterval();
+        });
+        $("#presetCycleLength").change(() => {
+          presetCycleLength =
+            Math.max(1, parseInt($("#presetCycleLength").val(), 10) || 15) *
+            1000;
+          restartCycleInterval();
+        });
+        $("#presetRandom").change(() => {
+          presetRandom = $("#presetRandom").is(":checked");
+        });
+
+        $("#localFileBut").click(() => $("#localFileInput").click());
+        $("#localFileInput").change((event) =>
+          loadLocalFiles(event.target.files)
+        );
+        $("#micSelect").click(captureMicrophone);
+        $("#captureTab").click(captureAnotherTab);
+        $("#stopTabCapture").click(() => stopTabCapture());
+        $("#fullscreenButton").click(() => {
+          if (document.fullscreenElement) document.exitFullscreen();
+          else document.documentElement.requestFullscreen();
+        });
+
+        function initPlayer() {
+          audioContext = new AudioContext();
+          if (window.all?.default) Object.assign(presets, window.all.default);
+          presets = _(presets)
+            .toPairs()
+            .sortBy(([key]) => key.toLowerCase())
+            .fromPairs()
+            .value();
+          presetKeys = _.keys(presets);
+          presetIndex = Math.floor(Math.random() * presetKeys.length);
+
+          presetKeys.forEach((key, index) => {
+            var option = document.createElement("option");
+            option.textContent = key;
+            option.value = index;
+            document.getElementById("presetSelect").appendChild(option);
           });
 
-          $('#stopTabCapture').show();
-          setTabCaptureStatus(`Visualizing: ${audioTrack.label || 'shared tab audio'}`);
-        } catch (error) {
-          stopTabCapture();
-          if (error.name !== 'NotAllowedError') {
-            setTabCaptureStatus(error.message || 'Could not capture tab audio.', true);
+          visualizer = butterchurn.createVisualizer(audioContext, canvas, {
+            width: window.innerWidth,
+            height: window.innerHeight,
+            pixelRatio: window.devicePixelRatio || 1,
+            textureRatio: 1,
+          });
+          if (window.imageData?.default)
+            visualizer.loadExtraImages(window.imageData.default);
+          nextPreset(0);
+          restartCycleInterval();
+          startRenderingOnce();
+          window.addEventListener("resize", resizeVisualizer);
+
+          if (!window.isSecureContext) {
+            setCaptureStatus(
+              "Tab capture is unavailable here. Open this page over HTTPS or localhost.",
+              "error"
+            );
           }
         }
-      }
 
-      function nextPreset(blendTime = 5.7) {
-        presetIndexHist.push(presetIndex);
-
-        var numPresets = presetKeys.length;
-        if (presetRandom) {
-          presetIndex = Math.floor(Math.random() * presetKeys.length);
-        } else {
-          presetIndex = (presetIndex + 1) % numPresets;
-        }
-
-        visualizer.loadPreset(presets[presetKeys[presetIndex]], blendTime);
-        $('#presetSelect').val(presetIndex);
-      }
-
-      function prevPreset(blendTime = 5.7) {
-        var numPresets = presetKeys.length;
-        if (presetIndexHist.length > 0) {
-          presetIndex = presetIndexHist.pop();
-        } else {
-          presetIndex = ((presetIndex - 1) + numPresets) % numPresets;
-        }
-
-        visualizer.loadPreset(presets[presetKeys[presetIndex]], blendTime);
-        $('#presetSelect').val(presetIndex);
-      }
-
-      function restartCycleInterval() {
-        if (cycleInterval) {
-          clearInterval(cycleInterval);
-          cycleInterval = null;
-        }
-
-        if (presetCycle) {
-          cycleInterval = setInterval(() => nextPreset(2.7), presetCycleLength);
-        }
-      }
-
-      $(document).keydown((e) => {
-        if (e.which === 32 || e.which === 39) {
-          nextPreset();
-        } else if (e.which === 8 || e.which === 37) {
-          prevPreset();
-        } else if (e.which === 72) {
-          nextPreset(0);
-        }
+        initPlayer();
       });
+    </script>
+  </head>
+  <body>
+    <main class="stage">
+      <canvas
+        id="canvas"
+        width="1280"
+        height="720"
+        aria-label="Live music visualization"
+      ></canvas>
 
-      $('#presetSelect').change((evt) => {
-        presetIndexHist.push(presetIndex);
-        presetIndex = parseInt($('#presetSelect').val());
-        visualizer.loadPreset(presets[presetKeys[presetIndex]], 5.7);
-      });
+      <header class="topbar">
+        <div class="brand" aria-label="Butterchurn live visualizer">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-copy">
+            <span class="brand-name">Butterchurn</span>
+            <span class="brand-subtitle">Live visualizer</span>
+          </span>
+        </div>
+        <button
+          class="icon-button"
+          id="fullscreenButton"
+          type="button"
+          aria-label="Toggle fullscreen"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            aria-hidden="true"
+          >
+            <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />
+          </svg>
+        </button>
+      </header>
 
-      $('#presetCycle').change(() => {
-        presetCycle = $('#presetCycle').is(':checked');
-        restartCycleInterval();
-      });
+      <section class="control-deck" aria-label="Visualizer controls">
+        <div class="source-panel">
+          <div class="source-state" id="sourceState" data-active="false">
+            <span class="signal-orbit" aria-hidden="true"
+              ><span class="signal-dot"></span
+            ></span>
+            <span class="source-state-copy">
+              <span class="eyebrow">Audio source</span>
+              <p class="source-name" id="activeSourceName">Waiting for audio</p>
+            </span>
+          </div>
+          <div class="source-actions">
+            <input
+              class="sr-only"
+              id="localFileInput"
+              type="file"
+              accept="audio/*"
+              multiple
+            />
+            <button class="source-button" id="localFileBut" type="button">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                aria-hidden="true"
+              >
+                <path d="M9 18V5l11-2v13" />
+                <circle cx="6" cy="18" r="3" />
+                <circle cx="17" cy="16" r="3" />
+              </svg>
+              Local files
+            </button>
+            <button class="source-button" id="micSelect" type="button">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                aria-hidden="true"
+              >
+                <rect x="9" y="3" width="6" height="12" rx="3" />
+                <path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8" />
+              </svg>
+              Microphone
+            </button>
+            <button
+              class="source-button"
+              id="captureTab"
+              type="button"
+              data-primary="true"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                aria-hidden="true"
+              >
+                <rect x="3" y="4" width="18" height="14" rx="2" />
+                <path
+                  d="M8 22h8M12 18v4M8 9a5 5 0 0 1 8 0M10 11a2.7 2.7 0 0 1 4 0"
+                />
+              </svg>
+              Capture a tab
+            </button>
+          </div>
+        </div>
 
-      $('#presetCycleLength').change((evt) => {
-        presetCycleLength = parseInt($('#presetCycleLength').val() * 1000);
-        restartCycleInterval();
-      });
+        <div class="capture-feedback" id="captureFeedback" data-visible="false">
+          <span
+            class="status"
+            id="tabCaptureStatus"
+            role="status"
+            aria-live="polite"
+          ></span>
+          <button class="text-button" id="stopTabCapture" type="button" hidden>
+            Stop capture
+          </button>
+        </div>
 
-      $('#presetRandom').change(() => {
-        presetRandom = $('#presetRandom').is(':checked');
-      });
-
-      $("#localFileBut").click(function() {
-        $("#audioSelectWrapper").css('display', 'none');
-
-        var fileSelector = $('<input type="file" accept="audio/*" multiple />');
-
-        fileSelector[0].onchange = function(event) {
-          loadLocalFiles(fileSelector[0].files);
-        }
-
-        fileSelector.click();
-      });
-
-      $("#micSelect").click(() => {
-        $("#audioSelectWrapper").css('display', 'none');
-
-        navigator.getUserMedia({ audio: true }, (stream) => {
-          var micSourceNode = audioContext.createMediaStreamSource(stream);
-          connectMicAudio(micSourceNode, audioContext);
-        }, (err) => {
-          console.log('Error getting audio stream from getUserMedia');
-        });
-      });
-
-      $('#captureTab').click(captureAnotherTab);
-      $('#stopTabCapture').click(stopTabCapture);
-
-      function initPlayer() {
-        audioContext = new AudioContext();
-
-        presets = {};
-        if (window.base && window.base.default) {
-          Object.assign(presets, window.base.default);
-        }
-        if (window.extra && window.extra.default) {
-          Object.assign(presets, window.extra.default);
-        }
-        presets = _(presets).toPairs().sortBy(([k, v]) => k.toLowerCase()).fromPairs().value();
-        presetKeys = _.keys(presets);
-        presetIndex = Math.floor(Math.random() * presetKeys.length);
-
-        var presetSelect = document.getElementById('presetSelect');
-        for(var i = 0; i < presetKeys.length; i++) {
-            var opt = document.createElement('option');
-            opt.innerHTML = presetKeys[i].substring(0,60) + (presetKeys[i].length > 60 ? '...' : '');
-            opt.value = i;
-            presetSelect.appendChild(opt);
-        }
-
-        visualizer = butterchurn.createVisualizer(audioContext, canvas , {
-          width: 800,
-          height: 600,
-          pixelRatio: window.devicePixelRatio || 1,
-          textureRatio: 1,
-        });
-        nextPreset(0);
-        cycleInterval = setInterval(() => nextPreset(2.7), presetCycleLength);
-      }
-
-      initPlayer();
-    });
-  </script>
-</head>
-<body>
-  <div id="mainWrapper">
-    <div id="audioSelectWrapper">
-      <div id="localFileBut">
-        <span>Load local files</span>
-      </div>
-      <div id="micSelect">
-        <span>Use Mic</span>
-      </div>
-      <div id="tabCaptureSelect">
-        <button id="captureTab" type="button">Capture another tab</button>
-        <button id="stopTabCapture" type="button">Stop capture</button>
-        <span id="tabCaptureStatus" role="status" aria-live="polite"></span>
-      </div>
-    </div>
-    <div id="presetControls">
-      <div>Preset: <select id="presetSelect"></select></div>
-      <div>Cycle: <input type="checkbox" id="presetCycle" checked></input>
-                  <input type="number" id="presetCycleLength"step="1" value="15" min="1"></input></div>
-      <div>Random: <input type="checkbox" id="presetRandom" checked></input></div>
-    </div>
-    <canvas id='canvas' width='800' height='600'>
-    </canvas>
-  </div>
-</body>
+        <div class="preset-panel">
+          <div class="field">
+            <label for="presetSelect">Preset</label>
+            <select id="presetSelect"></select>
+          </div>
+          <div class="field">
+            <span class="toggle-label">Auto cycle</span>
+            <div class="cycle-field">
+              <label class="toggle">
+                <input
+                  id="presetCycle"
+                  type="checkbox"
+                  checked
+                  aria-label="Automatically cycle presets"
+                />
+                <span class="toggle-track" aria-hidden="true"></span>
+              </label>
+              <input
+                id="presetCycleLength"
+                type="number"
+                step="1"
+                value="15"
+                min="1"
+                aria-label="Seconds between presets"
+              />
+              <span class="toggle-label">sec</span>
+            </div>
+          </div>
+          <div class="field">
+            <span class="toggle-label">Shuffle</span>
+            <div class="cycle-field">
+              <label class="toggle">
+                <input
+                  id="presetRandom"
+                  type="checkbox"
+                  checked
+                  aria-label="Choose presets randomly"
+                />
+                <span class="toggle-track" aria-hidden="true"></span>
+              </label>
+            </div>
+          </div>
+          <span class="shortcut">← / → change preset</span>
+        </div>
+      </section>
+    </main>
+  </body>
 </html>

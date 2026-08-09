@@ -15,6 +15,8 @@ FROM nginx:1.27-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html/dist
 COPY --from=build /app/examples /usr/share/nginx/html/examples
+COPY --from=build /app/node_modules/butterchurn-presets/dist/all.js /usr/share/nginx/html/vendor/butterchurn-presets/all.js
+COPY --from=build /app/node_modules/butterchurn-presets/dist/imageData.min.js /usr/share/nginx/html/vendor/butterchurn-presets/imageData.min.js
 
 EXPOSE 80
 
