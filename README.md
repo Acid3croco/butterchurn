@@ -7,6 +7,16 @@ Butterchurn is a WebGL implementation of the Milkdrop Visualizer
 
 [![Butterchurn Screenshot](preview.png)](https://butterchurnviz.com)
 
+### Capture audio from another browser tab
+
+The demo includes a **Capture another tab** button. In Chromium-based browsers,
+choose a browser tab in the sharing dialog and keep **Share tab audio** enabled.
+The captured audio is processed locally by the Web Audio API and is never sent
+to a server.
+
+Tab capture requires HTTPS (or localhost), an explicit user click, and a fresh
+browser permission for each capture session.
+
 ## Usage
 
 ### Installation
