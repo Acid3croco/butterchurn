@@ -134,6 +134,12 @@
         padding: 1.25rem 1.5rem;
       }
 
+      .topbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+      }
+
       .brand {
         display: flex;
         align-items: center;
@@ -219,7 +225,19 @@
         box-shadow: 0 22px 70px rgba(0, 0, 0, 0.42),
           inset 0 1px rgba(255, 255, 255, 0.04);
         backdrop-filter: blur(24px) saturate(130%);
-        overflow: hidden;
+        max-height: calc(100dvh - 5.5rem);
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-color: var(--line-strong) transparent;
+        scrollbar-width: thin;
+        transition: opacity 180ms ease, transform 220ms ease;
+      }
+
+      .stage[data-controls-visible="false"] .control-deck {
+        opacity: 0;
+        pointer-events: none;
+        transform: translate(-50%, calc(100% + 2rem));
       }
 
       .source-panel {
@@ -267,29 +285,64 @@
         border: 1px solid rgba(255, 107, 203, 0.65);
       }
 
-      .source-state[data-active="true"] .signal-orbit::before,
-      .source-state[data-active="true"] .signal-orbit::after {
-        animation: signal 2.2s ease-out infinite;
+      .source-state[data-signal="live"] .signal-orbit::before,
+      .source-state[data-signal="live"] .signal-orbit::after {
+        animation: signal 1.4s ease-out infinite;
       }
 
-      .source-state[data-active="true"] .signal-orbit::after {
-        animation-delay: 0.45s;
+      .source-state[data-signal="live"] .signal-orbit::after {
+        animation-delay: 0.28s;
       }
 
-      .signal-dot {
-        width: 0.65rem;
-        height: 0.65rem;
-        border-radius: 50%;
+      .signal-meter {
+        width: 1.35rem;
+        height: 1.15rem;
+        display: flex;
+        align-items: end;
+        justify-content: center;
+        gap: 0.14rem;
+      }
+
+      .signal-meter span {
+        width: 0.18rem;
+        height: 100%;
+        border-radius: 99px;
         background: var(--muted);
-        box-shadow: 0 0 0 4px rgba(154, 163, 194, 0.12);
+        opacity: 0.52;
+        transform-origin: bottom;
+        transition: background 140ms ease, opacity 140ms ease,
+          transform 80ms linear;
       }
 
-      .source-state[data-active="true"] .signal-dot {
+      .signal-meter span:nth-child(1) {
+        transform: scaleY(var(--meter-1, 0.12));
+      }
+
+      .signal-meter span:nth-child(2) {
+        transform: scaleY(var(--meter-2, 0.12));
+      }
+
+      .signal-meter span:nth-child(3) {
+        transform: scaleY(var(--meter-3, 0.12));
+      }
+
+      .signal-meter span:nth-child(4) {
+        transform: scaleY(var(--meter-4, 0.12));
+      }
+
+      .source-state[data-signal="live"] .signal-meter span {
         background: var(--success);
-        box-shadow: 0 0 18px var(--success);
+        box-shadow: 0 0 10px rgba(125, 244, 189, 0.72);
+        opacity: 1;
+      }
+
+      .source-state[data-signal="quiet"] .signal-meter span {
+        background: #ffd27d;
+        opacity: 0.72;
       }
 
       .source-state-copy {
+        display: grid;
         min-width: 0;
       }
 
@@ -306,6 +359,22 @@
         font-weight: 500;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+
+      .signal-readout {
+        margin-top: 0.28rem;
+        color: var(--muted);
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.6rem;
+        letter-spacing: 0.04em;
+      }
+
+      .source-state[data-signal="live"] .signal-readout {
+        color: var(--success);
+      }
+
+      .source-state[data-signal="quiet"] .signal-readout {
+        color: #ffd27d;
       }
 
       .source-actions {
@@ -540,6 +609,7 @@
         .control-deck {
           bottom: 0.75rem;
           width: calc(100% - 1rem);
+          max-height: calc(100dvh - 4.75rem);
         }
 
         .source-panel {
@@ -581,6 +651,33 @@
         }
       }
 
+      @media (max-height: 620px) {
+        .topbar {
+          padding: 0.65rem 0.75rem;
+        }
+
+        .brand-subtitle {
+          display: none;
+        }
+
+        .control-deck {
+          bottom: 0.5rem;
+          max-height: calc(100dvh - 3.75rem);
+        }
+
+        .source-state {
+          padding-block: 0.7rem;
+        }
+
+        .source-button {
+          min-height: 3rem;
+        }
+
+        .preset-panel {
+          padding-block: 0.65rem;
+        }
+      }
+
       @media (prefers-reduced-motion: reduce) {
         *,
         *::before,
@@ -601,6 +698,11 @@
         var rendering = false;
         var audioContext = null;
         var activeVisualizerNode = null;
+        var signalAnalyser = null;
+        var signalSamples = null;
+        var signalFrequencies = null;
+        var smoothedSignal = 0;
+        var displayedSignalState = "idle";
         var sourceNode = null;
         var delayedAudible = null;
         var micStream = null;
@@ -622,6 +724,7 @@
           if (activeVisualizerNode) {
             try {
               visualizer.disconnectAudio(activeVisualizerNode);
+              activeVisualizerNode.disconnect(signalAnalyser);
             } catch (error) {
               console.debug("Audio input was already disconnected.", error);
             }
@@ -630,12 +733,67 @@
           activeVisualizerNode = audioNode;
           if (activeVisualizerNode) {
             visualizer.connectAudio(activeVisualizerNode);
+            activeVisualizerNode.connect(signalAnalyser);
           }
         }
 
         function setSourceState(name, active) {
           $("#activeSourceName").text(name || "Waiting for audio");
           $("#sourceState").attr("data-active", active ? "true" : "false");
+          displayedSignalState = active ? "quiet" : "idle";
+          $("#sourceState").attr("data-signal", displayedSignalState);
+          $("#signalReadout").text(
+            active ? "Connected · no signal yet" : "No source connected"
+          );
+          setMeterLevels([0.12, 0.12, 0.12, 0.12]);
+          smoothedSignal = 0;
+        }
+
+        function setMeterLevels(levels) {
+          var meter = document.getElementById("signalMeter");
+          levels.forEach((level, index) => {
+            meter.style.setProperty(`--meter-${index + 1}`, level.toFixed(3));
+          });
+        }
+
+        function updateSignalMeter() {
+          if (!activeVisualizerNode || !signalAnalyser) return;
+
+          signalAnalyser.getByteTimeDomainData(signalSamples);
+          var energy = 0;
+          for (var i = 0; i < signalSamples.length; i++) {
+            var sample = (signalSamples[i] - 128) / 128;
+            energy += sample * sample;
+          }
+
+          var rms = Math.sqrt(energy / signalSamples.length);
+          smoothedSignal = Math.max(rms, smoothedSignal * 0.82);
+          signalAnalyser.getByteFrequencyData(signalFrequencies);
+          var bands = [
+            [0, 5],
+            [5, 14],
+            [14, 34],
+            [34, 72],
+          ];
+          var meterLevels = bands.map(([start, end]) => {
+            var total = 0;
+            for (var bin = start; bin < end; bin++) {
+              total += signalFrequencies[bin];
+            }
+            return Math.min(1, Math.max(0.12, total / (end - start) / 150));
+          });
+          setMeterLevels(meterLevels);
+
+          var nextState = smoothedSignal > 0.012 ? "live" : "quiet";
+          if (nextState !== displayedSignalState) {
+            displayedSignalState = nextState;
+            $("#sourceState").attr("data-signal", nextState);
+            $("#signalReadout").text(
+              nextState === "live"
+                ? "Signal detected · visualizer is reacting"
+                : "Connected · no signal yet"
+            );
+          }
         }
 
         function setCaptureStatus(message, tone = "neutral", show = true) {
@@ -648,6 +806,7 @@
 
         function startRenderer() {
           if (!rendering) return;
+          updateSignalMeter();
           visualizer.render();
           requestAnimationFrame(startRenderer);
         }
@@ -958,9 +1117,28 @@
           if (document.fullscreenElement) document.exitFullscreen();
           else document.documentElement.requestFullscreen();
         });
+        $("#controlsButton").click(() => {
+          var controlsVisible =
+            $("#stage").attr("data-controls-visible") !== "false";
+          $("#stage").attr(
+            "data-controls-visible",
+            controlsVisible ? "false" : "true"
+          );
+          $("#controlsButton")
+            .attr("aria-expanded", controlsVisible ? "false" : "true")
+            .attr(
+              "aria-label",
+              controlsVisible ? "Show controls" : "Hide controls"
+            );
+        });
 
         function initPlayer() {
           audioContext = new AudioContext();
+          signalAnalyser = audioContext.createAnalyser();
+          signalAnalyser.fftSize = 256;
+          signalAnalyser.smoothingTimeConstant = 0.72;
+          signalSamples = new Uint8Array(signalAnalyser.fftSize);
+          signalFrequencies = new Uint8Array(signalAnalyser.frequencyBinCount);
           if (window.all?.default) Object.assign(presets, window.all.default);
           presets = _(presets)
             .toPairs()
@@ -1003,7 +1181,7 @@
     </script>
   </head>
   <body>
-    <main class="stage">
+    <main class="stage" id="stage" data-controls-visible="true">
       <canvas
         id="canvas"
         width="1280"
@@ -1019,33 +1197,66 @@
             <span class="brand-subtitle">Live visualizer</span>
           </span>
         </div>
-        <button
-          class="icon-button"
-          id="fullscreenButton"
-          type="button"
-          aria-label="Toggle fullscreen"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            aria-hidden="true"
+        <div class="topbar-actions">
+          <button
+            class="icon-button"
+            id="controlsButton"
+            type="button"
+            aria-label="Hide controls"
+            aria-controls="visualizerControls"
+            aria-expanded="true"
           >
-            <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />
-          </svg>
-        </button>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              aria-hidden="true"
+            >
+              <path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M10 14v6" />
+            </svg>
+          </button>
+          <button
+            class="icon-button"
+            id="fullscreenButton"
+            type="button"
+            aria-label="Toggle fullscreen"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              aria-hidden="true"
+            >
+              <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />
+            </svg>
+          </button>
+        </div>
       </header>
 
-      <section class="control-deck" aria-label="Visualizer controls">
+      <section
+        class="control-deck"
+        id="visualizerControls"
+        aria-label="Visualizer controls"
+      >
         <div class="source-panel">
-          <div class="source-state" id="sourceState" data-active="false">
+          <div
+            class="source-state"
+            id="sourceState"
+            data-active="false"
+            data-signal="idle"
+          >
             <span class="signal-orbit" aria-hidden="true"
-              ><span class="signal-dot"></span
+              ><span class="signal-meter" id="signalMeter">
+                <span></span><span></span><span></span><span></span> </span
             ></span>
             <span class="source-state-copy">
               <span class="eyebrow">Audio source</span>
               <p class="source-name" id="activeSourceName">Waiting for audio</p>
+              <span class="signal-readout" id="signalReadout"
+                >No source connected</span
+              >
             </span>
           </div>
           <div class="source-actions">
