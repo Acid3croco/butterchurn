@@ -427,6 +427,81 @@
         flex: 0 0 auto;
       }
 
+      .youtube-panel {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        padding: 0.65rem 0.8rem;
+        border-top: 1px solid var(--line);
+      }
+
+      .youtube-panel svg {
+        width: 1.15rem;
+        height: 1.15rem;
+        flex: 0 0 auto;
+        color: var(--muted);
+      }
+
+      input[type="url"] {
+        flex: 1;
+        min-width: 0;
+        height: 2.4rem;
+        padding: 0 0.75rem;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.055);
+        color: var(--mist);
+        font-size: 0.82rem;
+      }
+
+      input[type="url"]::placeholder {
+        color: var(--muted);
+      }
+
+      .youtube-panel .source-button {
+        min-height: 2.4rem;
+        flex: 0 0 auto;
+        padding: 0 1rem;
+      }
+
+      #youtubePause svg,
+      #youtubeStop svg,
+      #youtubePrev svg,
+      #youtubeNext svg {
+        width: 0.9rem;
+        height: 0.9rem;
+      }
+
+      input[type="range"] {
+        width: 6.5rem;
+        flex: 0 0 auto;
+        height: 2.4rem;
+        margin: 0;
+        background: transparent;
+        accent-color: var(--cyan);
+        cursor: pointer;
+      }
+
+      .youtube-seek {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0 0.8rem 0.65rem;
+      }
+
+      .youtube-seek input[type="range"] {
+        width: auto;
+        flex: 1;
+        height: 1.2rem;
+      }
+
+      .seek-time {
+        color: var(--muted);
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.64rem;
+        font-variant-numeric: tabular-nums;
+      }
+
       .capture-feedback {
         display: none;
         align-items: center;
@@ -781,6 +856,13 @@
         var micSourceNode = null;
         var tabCaptureStream = null;
         var tabCaptureSourceNode = null;
+        var youtubeAudio = null;
+        var youtubeSourceNode = null;
+        var youtubeGainNode = null;
+        var youtubeObjectUrl = null;
+        var youtubeFetchController = null;
+        var youtubePlaylist = null;
+        var youtubePlaylistIndex = 0;
         var cycleInterval = null;
         var presets = {};
         var presetKeys = [];
@@ -1010,11 +1092,228 @@
           if (!options.preserveStatus) setCaptureStatus("", "neutral", false);
         }
 
+        function stopYoutubeAudio(options = {}) {
+          var wasActive =
+            Boolean(youtubeSourceNode) &&
+            activeVisualizerNode === youtubeSourceNode;
+
+          if (youtubeFetchController) {
+            youtubeFetchController.abort();
+            youtubeFetchController = null;
+          }
+          if (wasActive) setVisualizerInput(null);
+          if (youtubeAudio) {
+            youtubeAudio.pause();
+            youtubeAudio.removeAttribute("src");
+            youtubeAudio = null;
+          }
+          if (youtubeSourceNode) {
+            youtubeSourceNode.disconnect();
+            youtubeSourceNode = null;
+          }
+          if (youtubeGainNode) {
+            youtubeGainNode.disconnect();
+            youtubeGainNode = null;
+          }
+          if (youtubeObjectUrl) {
+            URL.revokeObjectURL(youtubeObjectUrl);
+            youtubeObjectUrl = null;
+          }
+
+          $("#youtubeStop").prop("hidden", true);
+          $("#youtubePause").prop("hidden", true);
+          $("#youtubePrev").prop("hidden", true);
+          $("#youtubeNext").prop("hidden", true);
+          $("#youtubeVolume").prop("hidden", true);
+          $("#youtubeSeekRow").prop("hidden", true);
+          if (wasActive) setSourceState("", false);
+          if (!options.preserveStatus) setCaptureStatus("", "neutral", false);
+        }
+
         function stopAllAudio() {
           stopLocalAudio();
           stopMicCapture();
           stopTabCapture({ preserveStatus: true });
+          stopYoutubeAudio({ preserveStatus: true });
           setVisualizerInput(null);
+        }
+
+        async function fetchWithBusyRetry(url, controller) {
+          var response = await fetch(url, { signal: controller.signal });
+          if (response.status !== 429) return response;
+          // A quick track switch can race the server-side cleanup of the
+          // previous download; give it a moment and try once more.
+          await new Promise((resolve) => setTimeout(resolve, 700));
+          return fetch(url, { signal: controller.signal });
+        }
+
+        async function playYoutubeMedia(video, options) {
+          audioContext.resume();
+          if (youtubeFetchController) youtubeFetchController.abort();
+          var controller = new AbortController();
+          youtubeFetchController = controller;
+          $("#youtubePlay").prop("disabled", true);
+          setCaptureStatus("Fetching audio from YouTube…");
+
+          try {
+            var response = await fetchWithBusyRetry(
+              `/api/youtube/audio?v=${encodeURIComponent(video)}`,
+              controller
+            );
+            if (!response.ok) {
+              var problem = await response
+                .json()
+                .catch(() => ({ error: `Server error (${response.status}).` }));
+              throw new Error(problem.error || "Could not fetch the audio.");
+            }
+
+            var reader = response.body.getReader();
+            var totalBytes =
+              parseInt(response.headers.get("Content-Length"), 10) || 0;
+            var chunks = [];
+            var receivedBytes = 0;
+            for (;;) {
+              var { done, value } = await reader.read();
+              if (done) break;
+              chunks.push(value);
+              receivedBytes += value.length;
+              var progress = totalBytes
+                ? `${Math.round((receivedBytes / totalBytes) * 100)}%`
+                : `${(receivedBytes / (1024 * 1024)).toFixed(1)} MB`;
+              setCaptureStatus(`Downloading audio… ${progress}`);
+            }
+
+            var encodedTitle = response.headers.get("X-Video-Title");
+            var title =
+              options.title ||
+              (encodedTitle
+                ? decodeURIComponent(encodedTitle)
+                : "YouTube audio");
+
+            stopAllAudio();
+            youtubeObjectUrl = URL.createObjectURL(
+              new Blob(chunks, { type: "audio/mp4" })
+            );
+            youtubeAudio = new Audio(youtubeObjectUrl);
+            youtubeAudio.loop = Boolean(options.loop);
+            youtubeSourceNode = audioContext.createMediaElementSource(
+              youtubeAudio
+            );
+            // The gain node only feeds the speakers, so turning the volume
+            // down does not starve the visualizer of signal.
+            youtubeGainNode = audioContext.createGain();
+            youtubeGainNode.gain.value =
+              parseFloat($("#youtubeVolume").val()) || 0;
+            youtubeSourceNode.connect(youtubeGainNode);
+            youtubeGainNode.connect(audioContext.destination);
+            setVisualizerInput(youtubeSourceNode);
+            youtubeAudio.addEventListener("pause", updateYoutubePauseButton);
+            youtubeAudio.addEventListener("play", updateYoutubePauseButton);
+            youtubeAudio.addEventListener("timeupdate", updateYoutubeSeekBar);
+            youtubeAudio.addEventListener(
+              "loadedmetadata",
+              updateYoutubeSeekBar
+            );
+            if (!options.loop) {
+              var thisAudio = youtubeAudio;
+              var nextIndex = youtubePlaylistIndex + 1;
+              youtubeAudio.addEventListener("ended", () => {
+                if (youtubeAudio === thisAudio && youtubePlaylist)
+                  playPlaylistTrack(nextIndex);
+              });
+            }
+
+            setSourceState(options.label || title, true);
+            $("#youtubeStop").prop("hidden", false);
+            $("#youtubePause").prop("hidden", false);
+            $("#youtubePrev").prop("hidden", !youtubePlaylist);
+            $("#youtubeNext").prop("hidden", !youtubePlaylist);
+            $("#youtubeVolume").prop("hidden", false);
+            $("#youtubeSeekRow").prop("hidden", false);
+
+            try {
+              await youtubeAudio.play();
+              setCaptureStatus("", "neutral", false);
+            } catch (playError) {
+              if (playError.name !== "NotAllowedError") throw playError;
+              // Autoplay was blocked because the download outlived the click
+              // activation. The audio is ready; it just needs another tap.
+              setCaptureStatus("Audio is ready — press the play button.");
+            }
+            updateYoutubePauseButton();
+            startRenderingOnce();
+          } catch (error) {
+            if (error.name !== "AbortError") {
+              stopYoutubeAudio({ preserveStatus: true });
+              setCaptureStatus(
+                error.message || "Could not play this YouTube link.",
+                "error"
+              );
+            }
+          } finally {
+            if (youtubeFetchController === controller)
+              youtubeFetchController = null;
+            $("#youtubePlay").prop("disabled", false);
+          }
+        }
+
+        function playPlaylistTrack(index) {
+          if (!youtubePlaylist || !youtubePlaylist.length) return;
+          youtubePlaylistIndex =
+            ((index % youtubePlaylist.length) + youtubePlaylist.length) %
+            youtubePlaylist.length;
+          var entry = youtubePlaylist[youtubePlaylistIndex];
+          playYoutubeMedia(entry.id, {
+            loop: false,
+            title: entry.title,
+            label: `${entry.title} · ${youtubePlaylistIndex + 1}/${
+              youtubePlaylist.length
+            }`,
+          });
+        }
+
+        async function playYoutubeUrl(url) {
+          var listId = null;
+          try {
+            listId = new URL(url).searchParams.get("list");
+          } catch (error) {
+            /* A bare video id is fine; the server validates it. */
+          }
+
+          if (!listId) {
+            youtubePlaylist = null;
+            playYoutubeMedia(url, { loop: true });
+            return;
+          }
+
+          $("#youtubePlay").prop("disabled", true);
+          setCaptureStatus("Reading the playlist…");
+          try {
+            var response = await fetch(
+              `/api/youtube/playlist?url=${encodeURIComponent(url)}`
+            );
+            if (!response.ok) {
+              var problem = await response.json().catch(() => ({}));
+              throw new Error(problem.error || "Could not read this playlist.");
+            }
+            var playlist = await response.json();
+            if (!playlist.entries.length)
+              throw new Error("This playlist has no playable entries.");
+            if (playlist.entries.length === 1) {
+              youtubePlaylist = null;
+              playYoutubeMedia(playlist.entries[0].id, { loop: true });
+              return;
+            }
+            youtubePlaylist = playlist.entries;
+            playPlaylistTrack(0);
+          } catch (error) {
+            setCaptureStatus(
+              error.message || "Could not read this playlist.",
+              "error"
+            );
+          } finally {
+            $("#youtubePlay").prop("disabled", false);
+          }
         }
 
         function playBufferSource(buffer, label) {
@@ -1271,6 +1570,85 @@
         $("#micSelect").click(captureMicrophone);
         $("#captureTab").click(captureAnotherTab);
         $("#stopTabCapture").click(() => stopTabCapture());
+        var youtubeSeekDragging = false;
+
+        function formatTime(seconds) {
+          if (!isFinite(seconds)) return "0:00";
+          var whole = Math.floor(seconds);
+          var hours = Math.floor(whole / 3600);
+          var minutes = Math.floor((whole % 3600) / 60);
+          var secs = String(whole % 60).padStart(2, "0");
+          if (!hours) return `${minutes}:${secs}`;
+          return `${hours}:${String(minutes).padStart(2, "0")}:${secs}`;
+        }
+
+        function updateYoutubeSeekBar() {
+          if (!youtubeAudio) return;
+          var duration = youtubeAudio.duration;
+          $("#youtubeDuration").text(formatTime(duration));
+          $("#youtubeCurrentTime").text(formatTime(youtubeAudio.currentTime));
+          if (!youtubeSeekDragging && isFinite(duration) && duration > 0) {
+            $("#youtubeSeek").val(
+              Math.round((youtubeAudio.currentTime / duration) * 1000)
+            );
+          }
+        }
+
+        function updateYoutubePauseButton() {
+          var paused = !youtubeAudio || youtubeAudio.paused;
+          $("#youtubePauseIcon").attr(
+            "d",
+            paused ? "M8 5.5v13l11-6.5z" : "M7 5h4v14H7zM13 5h4v14h-4z"
+          );
+          $("#youtubePause").attr(
+            "aria-label",
+            paused ? "Resume YouTube audio" : "Pause YouTube audio"
+          );
+        }
+
+        $("#youtubeForm").submit((event) => {
+          event.preventDefault();
+          var url = $("#youtubeUrl").val().trim();
+          if (url) playYoutubeUrl(url);
+        });
+        $("#youtubeStop").click(() => {
+          youtubePlaylist = null;
+          stopYoutubeAudio();
+        });
+        $("#youtubePause").click(() => {
+          if (!youtubeAudio) return;
+          if (youtubeAudio.paused) youtubeAudio.play();
+          else youtubeAudio.pause();
+        });
+        $("#youtubePrev").click(() => {
+          if (!youtubePlaylist) return;
+          if (youtubeAudio && youtubeAudio.currentTime > 3) {
+            youtubeAudio.currentTime = 0;
+            return;
+          }
+          playPlaylistTrack(youtubePlaylistIndex - 1);
+        });
+        $("#youtubeNext").click(() => {
+          if (youtubePlaylist) playPlaylistTrack(youtubePlaylistIndex + 1);
+        });
+        $("#youtubeVolume").on("input change", () => {
+          var volume = parseFloat($("#youtubeVolume").val()) || 0;
+          if (youtubeGainNode) youtubeGainNode.gain.value = volume;
+          storeSetting("butterchurn:youtube-volume", String(volume));
+        });
+        $("#youtubeSeek").on("pointerdown", () => {
+          youtubeSeekDragging = true;
+        });
+        $("#youtubeSeek").on("pointerup pointercancel", () => {
+          youtubeSeekDragging = false;
+        });
+        $("#youtubeSeek").on("input change", () => {
+          if (!youtubeAudio || !isFinite(youtubeAudio.duration)) return;
+          youtubeAudio.currentTime =
+            (parseInt($("#youtubeSeek").val(), 10) / 1000) *
+            youtubeAudio.duration;
+          updateYoutubeSeekBar();
+        });
         $("#fullscreenButton").click(() => {
           if (document.fullscreenElement) document.exitFullscreen();
           else document.documentElement.requestFullscreen();
@@ -1307,6 +1685,11 @@
           $("#fpsTargetReadout").text(
             targetFPS ? `/ ${targetFPS} target` : "/ display sync"
           );
+          var storedVolume = parseFloat(
+            getStoredSetting("butterchurn:youtube-volume", "1")
+          );
+          if (storedVolume >= 0 && storedVolume <= 1)
+            $("#youtubeVolume").val(storedVolume);
 
           audioContext = new AudioContext();
           signalAnalyser = audioContext.createAnalyser();
@@ -1495,6 +1878,118 @@
               Capture a tab
             </button>
           </div>
+        </div>
+
+        <form class="youtube-panel" id="youtubeForm">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            aria-hidden="true"
+          >
+            <rect x="2.5" y="6" width="19" height="12" rx="3" />
+            <path d="M10.2 9.5l4.6 2.5-4.6 2.5z" fill="currentColor" />
+          </svg>
+          <input
+            id="youtubeUrl"
+            type="url"
+            placeholder="Paste a YouTube link — the audio plays on a loop"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="YouTube video URL"
+          />
+          <button class="source-button" id="youtubePlay" type="submit">
+            Play
+          </button>
+          <button
+            class="source-button"
+            id="youtubePrev"
+            type="button"
+            aria-label="Previous track"
+            hidden
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              stroke="none"
+              aria-hidden="true"
+            >
+              <path d="M7 6h2v12H7zM19 6l-9 6 9 6z" />
+            </svg>
+          </button>
+          <button
+            class="source-button"
+            id="youtubePause"
+            type="button"
+            aria-label="Pause YouTube audio"
+            hidden
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              stroke="none"
+              aria-hidden="true"
+            >
+              <path id="youtubePauseIcon" d="M7 5h4v14H7zM13 5h4v14h-4z" />
+            </svg>
+          </button>
+          <button
+            class="source-button"
+            id="youtubeNext"
+            type="button"
+            aria-label="Next track"
+            hidden
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              stroke="none"
+              aria-hidden="true"
+            >
+              <path d="M15 6h2v12h-2zM5 6l9 6-9 6z" />
+            </svg>
+          </button>
+          <button
+            class="source-button"
+            id="youtubeStop"
+            type="button"
+            aria-label="Stop YouTube audio"
+            hidden
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              stroke="none"
+              aria-hidden="true"
+            >
+              <rect x="6" y="6" width="12" height="12" rx="1.5" />
+            </svg>
+          </button>
+          <input
+            id="youtubeVolume"
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value="1"
+            aria-label="YouTube audio volume"
+            hidden
+          />
+        </form>
+
+        <div class="youtube-seek" id="youtubeSeekRow" hidden>
+          <span class="seek-time" id="youtubeCurrentTime">0:00</span>
+          <input
+            id="youtubeSeek"
+            type="range"
+            min="0"
+            max="1000"
+            step="1"
+            value="0"
+            aria-label="Playback position"
+          />
+          <span class="seek-time" id="youtubeDuration">0:00</span>
         </div>
 
         <div class="capture-feedback" id="captureFeedback" data-visible="false">

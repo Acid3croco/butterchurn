@@ -4,6 +4,17 @@ The repository Dockerfile builds Butterchurn and serves the demo with nginx on
 port 80. TLS must terminate at Coolify's reverse proxy; the container itself
 does not need to expose port 443.
 
+The image also runs a small Node service (`server/youtube-audio.mjs`) on
+loopback port 3000. nginx proxies `/api/` to it; it fetches the audio track of
+a YouTube video with yt-dlp for the demo's YouTube source. yt-dlp is installed
+from PyPI at image build time, so redeploying rebuilds the image and picks up
+the latest YouTube extractor fixes — redeploy if YouTube fetches start
+failing.
+
+If the server's IP gets flagged by YouTube's bot checks, mount a cookies file
+into the container and set the `YTDLP_COOKIES` environment variable to its
+path (see the yt-dlp FAQ on cookies).
+
 ## Application settings
 
 Create a Coolify application from the Git repository with these values:
@@ -30,6 +41,12 @@ available in a secure context (HTTPS or localhost).
 5. Confirm that the source indicator turns green and the visualizer reacts.
 6. Stop sharing from Chromium, then confirm the interface returns to
    **Waiting for audio** and allows a new capture.
+7. Paste a YouTube link into the YouTube field and press **Play**. Confirm the
+   download progress reaches 100%, the video title appears as the source, and
+   the pause, stop, volume, and seek controls work. `/api/youtube/health`
+   must return `{"ok":true}`.
+8. Paste a playlist or mix link. Confirm the track counter appears in the
+   source name and the previous/next buttons switch tracks.
 
 The browser grants capture permission per session. No audio is uploaded or
 stored by the application.
