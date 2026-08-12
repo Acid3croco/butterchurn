@@ -206,7 +206,9 @@ async function listPlaylistEntries(req, res, requestUrl) {
       console.error(
         `yt-dlp playlist lookup failed for ${target.listId}: ${stderrTail.trim()}`
       );
-      sendJSON(res, 502, {
+      // 500, not 502: Cloudflare replaces origin 502/504 bodies with its own
+      // error page, which would hide this message from the browser.
+      sendJSON(res, 500, {
         error: reason || "Could not read this playlist.",
       });
       return;
@@ -303,7 +305,9 @@ async function streamYoutubeAudio(req, res, requestUrl) {
           "Live streams and videos longer than 2 hours are not supported.";
       }
       console.error(`yt-dlp failed for ${videoId}: ${outputTail.trim()}`);
-      sendJSON(res, 502, {
+      // 500, not 502: Cloudflare replaces origin 502/504 bodies with its own
+      // error page, which would hide this message from the browser.
+      sendJSON(res, 500, {
         error: reason || "yt-dlp could not fetch this video's audio.",
       });
       return;
