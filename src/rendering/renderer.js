@@ -43,8 +43,16 @@ export default class Renderer {
     this.pixelRatio = opts.pixelRatio || window.devicePixelRatio || 1;
     this.textureRatio = opts.textureRatio || 1;
     this.outputFXAA = opts.outputFXAA || false;
-    this.texsizeX = this.width * this.pixelRatio * this.textureRatio;
-    this.texsizeY = this.height * this.pixelRatio * this.textureRatio;
+    // keep texture sizes in whole pixels so framebuffers, viewports and
+    // shader uniforms all agree on the same dimensions
+    this.texsizeX = Math.max(
+      1,
+      Math.floor(this.width * this.pixelRatio * this.textureRatio)
+    );
+    this.texsizeY = Math.max(
+      1,
+      Math.floor(this.height * this.pixelRatio * this.textureRatio)
+    );
     this.aspectx =
       this.texsizeY > this.texsizeX ? this.texsizeX / this.texsizeY : 1;
     this.aspecty =
@@ -290,12 +298,20 @@ export default class Renderer {
     this.mesh_height = opts.meshHeight || this.mesh_height;
     this.pixelRatio = opts.pixelRatio || this.pixelRatio;
     this.textureRatio = opts.textureRatio || this.textureRatio;
-    this.texsizeX = width * this.pixelRatio * this.textureRatio;
-    this.texsizeY = height * this.pixelRatio * this.textureRatio;
+    this.texsizeX = Math.max(
+      1,
+      Math.floor(width * this.pixelRatio * this.textureRatio)
+    );
+    this.texsizeY = Math.max(
+      1,
+      Math.floor(height * this.pixelRatio * this.textureRatio)
+    );
     this.aspectx =
       this.texsizeY > this.texsizeX ? this.texsizeX / this.texsizeY : 1;
     this.aspecty =
       this.texsizeX > this.texsizeY ? this.texsizeY / this.texsizeX : 1;
+    this.invAspectx = 1.0 / this.aspectx;
+    this.invAspecty = 1.0 / this.aspecty;
 
     if (this.texsizeX !== oldTexsizeX || this.texsizeY !== oldTexsizeY) {
       // copy target texture, because we flip prev/target at start of render

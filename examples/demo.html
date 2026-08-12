@@ -1512,6 +1512,8 @@
         function resizeVisualizer() {
           if (resizeFrame) cancelAnimationFrame(resizeFrame);
           resizeFrame = requestAnimationFrame(() => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
             visualizer.setRendererSize(window.innerWidth, window.innerHeight, {
               pixelRatio: rendererPixelRatio(),
             });
@@ -1713,6 +1715,8 @@
             document.getElementById("presetSelect").appendChild(option);
           });
 
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
           visualizer = butterchurn.createVisualizer(audioContext, canvas, {
             width: window.innerWidth,
             height: window.innerHeight,
