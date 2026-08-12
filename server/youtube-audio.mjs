@@ -96,6 +96,35 @@ function sendJSON(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+// Arguments shared by every yt-dlp invocation. YouTube's player challenges
+// need a JavaScript runtime; the image ships Node, so point yt-dlp at it
+// (deno is its default and is not installed). Cookies are the reliable
+// answer to YouTube bot-checking the server's datacenter IP.
+function sharedYtdlpArgs() {
+  const args = ["--js-runtimes", "node"];
+  if (process.env.YTDLP_COOKIES && existsSync(process.env.YTDLP_COOKIES)) {
+    args.push("--cookies", process.env.YTDLP_COOKIES);
+  }
+  return args;
+}
+
+// Turn yt-dlp's stderr tail into a message the page can show. yt-dlp's own
+// bot-check error suggests command-line flags, which mean nothing to a
+// visitor, so that one gets rephrased.
+function ytdlpFailureReason(outputTail) {
+  const lastError = outputTail
+    .split("\n")
+    .filter((line) => line.includes("ERROR"))
+    .pop();
+  if (lastError && lastError.includes("Sign in to confirm")) {
+    return (
+      "YouTube is blocking requests from this server (bot check). " +
+      "The site owner needs to install fresh YouTube cookies."
+    );
+  }
+  return lastError;
+}
+
 // Best-effort title lookup through YouTube's keyless oEmbed endpoint so the
 // page can show what is playing. Failures are silently ignored.
 async function fetchVideoTitle(videoId) {
@@ -139,6 +168,7 @@ async function listPlaylistEntries(req, res, requestUrl) {
     const ytdlp = spawn(
       YTDLP,
       [
+        ...sharedYtdlpArgs(),
         "--flat-playlist",
         "--dump-single-json",
         "--no-warnings",
@@ -172,10 +202,7 @@ async function listPlaylistEntries(req, res, requestUrl) {
     });
 
     if (exitCode !== 0) {
-      const reason = stderrTail
-        .split("\n")
-        .filter((line) => line.includes("ERROR"))
-        .pop();
+      const reason = ytdlpFailureReason(stderrTail);
       console.error(
         `yt-dlp playlist lookup failed for ${target.listId}: ${stderrTail.trim()}`
       );
@@ -233,6 +260,7 @@ async function streamYoutubeAudio(req, res, requestUrl) {
     // Content-Length for real download progress. m4a (AAC) is forced
     // because Safari cannot play webm/opus.
     const args = [
+      ...sharedYtdlpArgs(),
       "--no-playlist",
       "--no-progress",
       "--format",
@@ -244,11 +272,9 @@ async function streamYoutubeAudio(req, res, requestUrl) {
       `!is_live & duration <= ${MAX_DURATION_SECONDS}`,
       "--output",
       path.join(tempDir, "audio.%(ext)s"),
+      "--",
+      `https://www.youtube.com/watch?v=${videoId}`,
     ];
-    if (process.env.YTDLP_COOKIES && existsSync(process.env.YTDLP_COOKIES)) {
-      args.push("--cookies", process.env.YTDLP_COOKIES);
-    }
-    args.push("--", `https://www.youtube.com/watch?v=${videoId}`);
 
     const ytdlp = spawn(YTDLP, args, { stdio: ["ignore", "pipe", "pipe"] });
 
@@ -271,10 +297,7 @@ async function streamYoutubeAudio(req, res, requestUrl) {
     });
 
     if (exitCode !== 0 || !existsSync(audioPath)) {
-      let reason = outputTail
-        .split("\n")
-        .filter((line) => line.includes("ERROR"))
-        .pop();
+      let reason = ytdlpFailureReason(outputTail);
       if (!reason && outputTail.includes("does not pass filter")) {
         reason =
           "Live streams and videos longer than 2 hours are not supported.";
