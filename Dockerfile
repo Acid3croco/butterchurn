@@ -14,8 +14,11 @@ FROM nginx:1.27-alpine
 
 # node runs the YouTube audio proxy; yt-dlp comes from PyPI so each image
 # rebuild picks up the latest extractor fixes (YouTube breaks old versions).
+# The [default] extra pulls in yt-dlp-ejs, the JS challenge solver that yt-dlp
+# runs on Node (see --js-runtimes in server/youtube-audio.mjs); without it
+# extraction falls back to fringe clients that YouTube bot-flags quickly.
 RUN apk add --no-cache --upgrade expat nodejs ffmpeg python3 py3-pip \
-  && pip install --no-cache-dir --break-system-packages yt-dlp
+  && pip install --no-cache-dir --break-system-packages "yt-dlp[default]"
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY server /app/server

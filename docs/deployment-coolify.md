@@ -11,9 +11,23 @@ from PyPI at image build time, so redeploying rebuilds the image and picks up
 the latest YouTube extractor fixes — redeploy if YouTube fetches start
 failing.
 
-If the server's IP gets flagged by YouTube's bot checks, mount a cookies file
-into the container and set the `YTDLP_COOKIES` environment variable to its
-path (see the yt-dlp FAQ on cookies).
+YouTube bot-checks datacenter IPs ("Sign in to confirm you're not a bot"), so
+yt-dlp needs cookies from a logged-in YouTube session to fetch anything:
+
+1. In a private/incognito browser window, log in to youtube.com (a throwaway
+   Google account is safer than your main one), open a video, and export the
+   cookies in Netscape format with an extension such as "Get cookies.txt
+   LOCALLY". Close the private window afterwards without logging out — that
+   keeps the exported session from being rotated (see the yt-dlp wiki on
+   exporting YouTube cookies).
+2. Base64-encode the file (`base64 -i cookies.txt | tr -d '\n'`) and set the
+   result as the `YTDLP_COOKIES_B64` environment variable in Coolify, then
+   restart the application. The entrypoint writes it to disk and points
+   yt-dlp at it.
+
+Cookies expire after a while; if fetches start failing with the bot-check
+error again, export and set them again. Alternatively mount a cookies file
+yourself and set `YTDLP_COOKIES` to its path.
 
 ## Application settings
 
