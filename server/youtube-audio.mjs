@@ -18,8 +18,8 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "127.0.0.1";
 const YTDLP = process.env.YTDLP_PATH || "yt-dlp";
 const MAX_CONCURRENT_FETCHES = 3;
-const MAX_FETCH_MS = 5 * 60 * 1000;
-const MAX_DURATION_SECONDS = 2 * 60 * 60;
+const MAX_FETCH_MS = 10 * 60 * 1000;
+const MAX_DURATION_SECONDS = 6 * 60 * 60;
 const STATIC_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   ".."
@@ -301,8 +301,9 @@ async function streamYoutubeAudio(req, res, requestUrl) {
     if (exitCode !== 0 || !existsSync(audioPath)) {
       let reason = ytdlpFailureReason(outputTail);
       if (!reason && outputTail.includes("does not pass filter")) {
-        reason =
-          "Live streams and videos longer than 2 hours are not supported.";
+        reason = `Live streams and videos longer than ${
+          MAX_DURATION_SECONDS / 3600
+        } hours are not supported.`;
       }
       console.error(`yt-dlp failed for ${videoId}: ${outputTail.trim()}`);
       // 500, not 502: Cloudflare replaces origin 502/504 bodies with its own
