@@ -11,8 +11,16 @@ from PyPI at image build time, so redeploying rebuilds the image and picks up
 the latest YouTube extractor fixes — redeploy if YouTube fetches start
 failing.
 
-YouTube bot-checks datacenter IPs ("Sign in to confirm you're not a bot"), so
-yt-dlp needs cookies from a logged-in YouTube session to fetch anything:
+YouTube bot-checks datacenter IPs ("Sign in to confirm you're not a bot").
+The image answers that with the bgutil PO token provider: a small Node
+service the entrypoint runs on loopback port 4416, which mints the
+proof-of-origin tokens YouTube expects from legitimate clients. yt-dlp's
+bgutil plugin (pinned in the Dockerfile to the same version as the provider)
+picks it up automatically, so public videos fetch without any cookies and
+there is nothing that expires.
+
+If fetches still fail with the bot-check message, account cookies from a
+logged-in YouTube session are the fallback:
 
 1. In a private/incognito browser window, log in to youtube.com (a throwaway
    Google account is safer than your main one), open a video, and export the
