@@ -102,6 +102,13 @@ function sendJSON(res, status, body) {
 // answer to YouTube bot-checking the server's datacenter IP.
 function sharedYtdlpArgs() {
   const args = ["--js-runtimes", "node"];
+  // Escape hatch for YouTube's shifting bot countermeasures: extra yt-dlp
+  // flags (say, --extractor-args to pick player clients) can be tuned from
+  // the deployment env without a rebuild. Naive whitespace split — values
+  // with spaces are not supported.
+  if (process.env.YTDLP_EXTRA_ARGS) {
+    args.push(...process.env.YTDLP_EXTRA_ARGS.split(/\s+/).filter(Boolean));
+  }
   if (process.env.YTDLP_COOKIES && existsSync(process.env.YTDLP_COOKIES)) {
     args.push("--cookies", process.env.YTDLP_COOKIES);
   }
