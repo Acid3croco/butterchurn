@@ -881,11 +881,8 @@
 
         // Safari's getDisplayMedia returns display video only — WebKit has no
         // tab, window, or system audio source — so screen or window sharing
-        // can never feed the visualizer there. A loopback input device is the
-        // only route to system audio in Safari.
+        // can never feed the visualizer there. The microphone stands in.
         var displayAudioUnsupported = /apple/i.test(navigator.vendor || "");
-        var loopbackDevicePattern =
-          /blackhole|loopback|soundflower|virtual|aggregate/i;
 
         function getStoredSetting(key, fallback) {
           try {
@@ -1422,37 +1419,6 @@
           }
         }
 
-        async function preferredInputAudioStream() {
-          var processing = {
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false,
-          };
-          var stream = await navigator.mediaDevices.getUserMedia({
-            audio: processing,
-          });
-
-          // Input labels are only readable once permission is granted.
-          var devices = await navigator.mediaDevices.enumerateDevices();
-          var loopback = devices.find(
-            (device) =>
-              device.kind === "audioinput" &&
-              loopbackDevicePattern.test(device.label)
-          );
-          var activeId = stream.getAudioTracks()[0]?.getSettings().deviceId;
-          if (loopback && loopback.deviceId !== activeId) {
-            var loopbackStream = await navigator.mediaDevices.getUserMedia({
-              audio: Object.assign(
-                { deviceId: { exact: loopback.deviceId } },
-                processing
-              ),
-            });
-            stream.getTracks().forEach((track) => track.stop());
-            stream = loopbackStream;
-          }
-          return stream;
-        }
-
         async function captureShareOnSafari() {
           $("#captureTab").prop("disabled", true);
 
@@ -1469,16 +1435,23 @@
               });
             }
 
-            // WebKit ships share video only, so pair the live share with an
-            // audio input (loopback preferred) — unless this Safari finally
-            // returned share audio, in which case use it directly.
+            // WebKit ships share video only, so pair the live share with the
+            // microphone — unless this Safari finally returned share audio,
+            // in which case use it directly. Processing is disabled so music
+            // reaches the analyser unmangled.
             var sharedAudio = displayStream
               ? displayStream.getAudioTracks()
               : [];
             var audioTracks = sharedAudio;
             if (!audioTracks.length) {
-              setCaptureStatus("Connecting an audio input for the share…");
-              inputStream = await preferredInputAudioStream();
+              setCaptureStatus("Connecting your microphone for the share…");
+              inputStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                  echoCancellation: false,
+                  noiseSuppression: false,
+                  autoGainControl: false,
+                },
+              });
               audioTracks = inputStream.getAudioTracks();
             }
 
@@ -1502,15 +1475,10 @@
             setSourceState(label, true);
             if (sharedAudio.length) {
               setCaptureStatus("Shared audio is live.", "success");
-            } else if (loopbackDevicePattern.test(label)) {
-              setCaptureStatus(
-                `Sharing is live — syncing to system audio through ${label}.`,
-                "success"
-              );
             } else {
               setCaptureStatus(
-                "Sharing is live, but Safari never delivers the shared audio — the microphone is listening instead. For exact sync, route system audio through a loopback device such as BlackHole, or use Chrome or Edge.",
-                "neutral"
+                "Sharing is live — the microphone is listening, so play the window's sound out loud. Safari never hands pages the shared audio itself.",
+                "success"
               );
             }
           } catch (error) {
