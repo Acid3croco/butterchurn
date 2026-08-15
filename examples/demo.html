@@ -879,6 +879,14 @@
         var fpsSampleFrames = 0;
         var canvas = document.getElementById("canvas");
 
+        // Safari's getDisplayMedia returns display video only — WebKit has no
+        // tab, window, or system audio source — so screen or window sharing
+        // can never feed the visualizer there. A loopback input device is the
+        // only route to system audio in Safari.
+        var displayAudioUnsupported = /apple/i.test(navigator.vendor || "");
+        var loopbackDevicePattern =
+          /blackhole|loopback|soundflower|virtual|aggregate/i;
+
         function getStoredSetting(key, fallback) {
           try {
             return window.localStorage.getItem(key) || fallback;
@@ -1414,9 +1422,122 @@
           }
         }
 
+        async function preferredInputAudioStream() {
+          var processing = {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+          };
+          var stream = await navigator.mediaDevices.getUserMedia({
+            audio: processing,
+          });
+
+          // Input labels are only readable once permission is granted.
+          var devices = await navigator.mediaDevices.enumerateDevices();
+          var loopback = devices.find(
+            (device) =>
+              device.kind === "audioinput" &&
+              loopbackDevicePattern.test(device.label)
+          );
+          var activeId = stream.getAudioTracks()[0]?.getSettings().deviceId;
+          if (loopback && loopback.deviceId !== activeId) {
+            var loopbackStream = await navigator.mediaDevices.getUserMedia({
+              audio: Object.assign(
+                { deviceId: { exact: loopback.deviceId } },
+                processing
+              ),
+            });
+            stream.getTracks().forEach((track) => track.stop());
+            stream = loopbackStream;
+          }
+          return stream;
+        }
+
+        async function captureShareOnSafari() {
+          $("#captureTab").prop("disabled", true);
+
+          var displayStream = null;
+          var inputStream = null;
+          try {
+            if (navigator.mediaDevices.getDisplayMedia) {
+              setCaptureStatus(
+                "Choose the window or screen you want to sync with."
+              );
+              displayStream = await navigator.mediaDevices.getDisplayMedia({
+                video: true,
+                audio: true,
+              });
+            }
+
+            // WebKit ships share video only, so pair the live share with an
+            // audio input (loopback preferred) — unless this Safari finally
+            // returned share audio, in which case use it directly.
+            var sharedAudio = displayStream
+              ? displayStream.getAudioTracks()
+              : [];
+            var audioTracks = sharedAudio;
+            if (!audioTracks.length) {
+              setCaptureStatus("Connecting an audio input for the share…");
+              inputStream = await preferredInputAudioStream();
+              audioTracks = inputStream.getAudioTracks();
+            }
+
+            var videoTracks = displayStream
+              ? displayStream.getVideoTracks()
+              : [];
+            var stream = new MediaStream(videoTracks.concat(audioTracks));
+
+            stopAllAudio();
+            tabCaptureStream = stream;
+            tabCaptureSourceNode = audioContext.createMediaStreamSource(stream);
+            setVisualizerInput(tabCaptureSourceNode);
+            await audioContext.resume();
+            startRenderingOnce();
+
+            videoTracks[0]?.addEventListener("ended", () => stopTabCapture(), {
+              once: true,
+            });
+            $("#stopTabCapture").prop("hidden", false);
+            var label = audioTracks[0]?.label || "Shared audio";
+            setSourceState(label, true);
+            if (sharedAudio.length) {
+              setCaptureStatus("Shared audio is live.", "success");
+            } else if (loopbackDevicePattern.test(label)) {
+              setCaptureStatus(
+                `Sharing is live — syncing to system audio through ${label}.`,
+                "success"
+              );
+            } else {
+              setCaptureStatus(
+                "Sharing is live, but Safari never delivers the shared audio — the microphone is listening instead. For exact sync, route system audio through a loopback device such as BlackHole, or use Chrome or Edge.",
+                "neutral"
+              );
+            }
+          } catch (error) {
+            [displayStream, inputStream].forEach((candidate) =>
+              candidate?.getTracks().forEach((track) => track.stop())
+            );
+            stopTabCapture({ preserveStatus: true });
+            if (error.name === "NotAllowedError") {
+              setCaptureStatus("Capture was cancelled.", "neutral");
+            } else {
+              setCaptureStatus(
+                error.message || "Could not start capture.",
+                "error"
+              );
+            }
+          } finally {
+            $("#captureTab").prop("disabled", false);
+          }
+        }
+
         async function captureAnotherTab() {
           if (!window.isSecureContext) {
             setCaptureStatus("Tab capture needs HTTPS or localhost.", "error");
+            return;
+          }
+          if (displayAudioUnsupported) {
+            await captureShareOnSafari();
             return;
           }
           if (
@@ -1735,6 +1856,11 @@
               "Tab capture is unavailable here. Open this page over HTTPS or localhost.",
               "error"
             );
+          }
+
+          if (displayAudioUnsupported) {
+            document.getElementById("captureTab").lastChild.textContent =
+              "Share a window";
           }
         }
 
