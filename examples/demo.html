@@ -581,11 +581,15 @@
 
       .preset-panel {
         display: grid;
-        grid-template-columns: minmax(280px, 1fr) auto auto;
+        grid-template-columns: minmax(280px, 1fr) auto auto auto;
         align-items: end;
         gap: 1rem;
         padding: 0.85rem 1.25rem 1rem;
         border-top: 1px solid var(--line);
+      }
+
+      .preset-panel .shortcut {
+        grid-column: 1 / -1;
       }
 
       .performance-panel {
@@ -1661,6 +1665,14 @@
           showToast("Shuffle", enabled ? "on" : "off", 2500);
         }
 
+        var blackHoleOn = false;
+        function setBlackHole(enabled) {
+          blackHoleOn = enabled;
+          visualizer.setBlackHoleEnabled(enabled);
+          $("#blackHoleToggle").prop("checked", enabled);
+          showToast("Black hole", enabled ? "on" : "off", 2500);
+        }
+
         function setPresetCycleLength(seconds) {
           seconds = Math.max(1, seconds);
           presetCycleLength = seconds * 1000;
@@ -1705,6 +1717,10 @@
             setPresetCycle(!presetCycle);
           } else if (event.key === "s" || event.key === "S") {
             setPresetRandom(!presetRandom);
+          } else if (event.key === "b" || event.key === "B") {
+            setBlackHole(!blackHoleOn);
+          } else if (event.key === "v" || event.key === "V") {
+            toggleControlsVisibility();
           } else if (event.key === "ArrowUp") {
             event.preventDefault();
             setPresetCycleLength(presetCycleLength / 1000 + 5);
@@ -1730,6 +1746,9 @@
         );
         $("#presetRandom").change(() =>
           setPresetRandom($("#presetRandom").is(":checked"))
+        );
+        $("#blackHoleToggle").change(() =>
+          setBlackHole($("#blackHoleToggle").is(":checked"))
         );
         $("#fpsLimit").change(() => {
           targetFPS = Math.max(0, parseInt($("#fpsLimit").val(), 10) || 0);
@@ -1837,7 +1856,7 @@
           if (document.fullscreenElement) document.exitFullscreen();
           else document.documentElement.requestFullscreen();
         });
-        $("#controlsButton").click(() => {
+        function toggleControlsVisibility() {
           var controlsVisible =
             $("#stage").attr("data-controls-visible") !== "false";
           $("#stage").attr(
@@ -1851,7 +1870,9 @@
               controlsVisible ? "Show controls" : "Hide controls"
             );
           document.getElementById("controlsButton").blur();
-        });
+        }
+
+        $("#controlsButton").click(toggleControlsVisibility);
 
         function initPlayer() {
           var storedFPS = getStoredSetting("butterchurn:fps-limit", "0");
@@ -1883,8 +1904,6 @@
           signalSamples = new Uint8Array(signalAnalyser.fftSize);
           signalFrequencies = new Uint8Array(signalAnalyser.frequencyBinCount);
           if (window.all?.default) Object.assign(presets, window.all.default);
-          presets["martin - charisma x gargantua [black hole]"] =
-            butterchurn.getBlackHolePreset();
           presets = _(presets)
             .toPairs()
             .sortBy(([key]) => key.toLowerCase())
@@ -2240,8 +2259,22 @@
               </label>
             </div>
           </div>
+          <div class="field">
+            <span class="toggle-label">Black hole</span>
+            <div class="cycle-field">
+              <label class="toggle">
+                <input
+                  id="blackHoleToggle"
+                  type="checkbox"
+                  aria-label="Render the Interstellar black hole over the preset"
+                />
+                <span class="toggle-track" aria-hidden="true"></span>
+              </label>
+            </div>
+          </div>
           <span class="shortcut"
-            >← / → preset · A auto cycle · S shuffle · ↑ / ↓ cycle time</span
+            >← / → preset · A auto cycle · S shuffle · B black hole · V
+            controls · ↑ / ↓ cycle time</span
           >
         </div>
 

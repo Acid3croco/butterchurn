@@ -210,8 +210,6 @@ export default class Renderer {
     this.prevPreset = this.preset;
     this.preset = preset;
 
-    this.blackHole.setEnabled(!!preset.blackHole);
-
     this.presetTime = this.time;
 
     const globalVars = {
@@ -1209,11 +1207,7 @@ export default class Renderer {
 
       this.bindFrambufferAndSetViewport(null, this.width, this.height);
       this.outputShader.renderQuadTexture(this.compTexture);
-      this.blackHole.drawBlackHole(
-        this.time,
-        this.compTexture,
-        this.audio.freqArray
-      );
+      this.blackHole.drawBlackHole(this.time, this.compTexture);
     } else if (this.outputFXAA) {
       this.gl.bindTexture(this.gl.TEXTURE_2D, this.compTexture);
       this.gl.generateMipmap(this.gl.TEXTURE_2D);
@@ -1221,6 +1215,10 @@ export default class Renderer {
       this.bindFrambufferAndSetViewport(null, this.width, this.height);
       this.outputShader.renderQuadTexture(this.compTexture);
     }
+  }
+
+  setBlackHoleEnabled(enabled) {
+    this.blackHole.setEnabled(enabled);
   }
 
   launchSongTitleAnim(text) {

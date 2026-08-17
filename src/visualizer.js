@@ -784,6 +784,16 @@ export default class Visualizer {
     this.renderer.launchSongTitleAnim(text);
   }
 
+  setBlackHoleEnabled(enabled) {
+    this.renderer.setBlackHoleEnabled(enabled);
+  }
+
+  toggleBlackHole() {
+    const enabled = !this.renderer.blackHole.enabled;
+    this.renderer.setBlackHoleEnabled(enabled);
+    return enabled;
+  }
+
   toDataURL() {
     return this.renderer.toDataURL();
   }
