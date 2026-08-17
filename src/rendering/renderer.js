@@ -1111,13 +1111,7 @@ export default class Renderer {
       mdVSFrameMixed.ob_size
     );
 
-    // rendered into the feedback loop so the lensed light flows with the preset
-    this.blackHole.drawBlackHole(
-      this.time,
-      this.audioLevels,
-      this.fps,
-      this.prevTexture
-    );
+    this.blackHole.updateAudio(this.audioLevels, this.fps);
 
     if (this.supertext.startTime >= 0) {
       const progress =
@@ -1136,7 +1130,8 @@ export default class Renderer {
   }
 
   renderToScreen() {
-    if (this.outputFXAA) {
+    const blackHoleActive = this.blackHole.intensity >= 0.01;
+    if (this.outputFXAA || blackHoleActive) {
       this.bindFrambufferAndSetViewport(
         this.compFrameBuffer,
         this.texsizeX,
@@ -1204,7 +1199,18 @@ export default class Renderer {
       }
     }
 
-    if (this.outputFXAA) {
+    if (blackHoleActive) {
+      // the hole sits in front of the composed frame: show the frame, then
+      // lens all of its light through the geodesic pass on top. Sampling
+      // the finished comp (not the feedback texture) keeps the lens from
+      // re-lensing its own output into echo rings.
+      this.gl.bindTexture(this.gl.TEXTURE_2D, this.compTexture);
+      this.gl.generateMipmap(this.gl.TEXTURE_2D);
+
+      this.bindFrambufferAndSetViewport(null, this.width, this.height);
+      this.outputShader.renderQuadTexture(this.compTexture);
+      this.blackHole.drawBlackHole(this.time, this.compTexture);
+    } else if (this.outputFXAA) {
       this.gl.bindTexture(this.gl.TEXTURE_2D, this.compTexture);
       this.gl.generateMipmap(this.gl.TEXTURE_2D);
 

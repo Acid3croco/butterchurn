@@ -354,9 +354,7 @@ export default class BlackHole {
     return [r / maxC, g / maxC, bl / maxC];
   }
 
-  drawBlackHole(time, audioLevels, fps, backgroundTexture) {
-    this.updateAudio(audioLevels, fps);
-
+  drawBlackHole(time, backgroundTexture) {
     if (this.intensity < 0.01) {
       return;
     }
