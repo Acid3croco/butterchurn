@@ -1789,6 +1789,8 @@
           signalSamples = new Uint8Array(signalAnalyser.fftSize);
           signalFrequencies = new Uint8Array(signalAnalyser.frequencyBinCount);
           if (window.all?.default) Object.assign(presets, window.all.default);
+          presets["interstellar - gargantua [black hole]"] =
+            butterchurn.getBlackHolePreset();
           presets = _(presets)
             .toPairs()
             .sortBy(([key]) => key.toLowerCase())

@@ -8,6 +8,7 @@ import CustomShape from "./shapes/customShape";
 import Border from "./sprites/border";
 import DarkenCenter from "./sprites/darkenCenter";
 import MotionVectors from "./motionVectors/motionVectors";
+import BlackHole from "./blackHole/blackHole";
 import WarpShader from "./shaders/warp";
 import CompShader from "./shaders/comp";
 import OutputShader from "./shaders/output";
@@ -135,6 +136,7 @@ export default class Renderer {
     this.innerBorder = new Border(gl, params);
     this.outerBorder = new Border(gl, params);
     this.motionVectors = new MotionVectors(gl, params);
+    this.blackHole = new BlackHole(gl, params);
     this.titleText = new TitleText(gl, params);
     this.blendPattern = new BlendPattern(params);
     this.resampleShader = new ResampleShader(gl);
@@ -207,6 +209,8 @@ export default class Renderer {
 
     this.prevPreset = this.preset;
     this.preset = preset;
+
+    this.blackHole.setEnabled(!!preset.blackHole);
 
     this.presetTime = this.time;
 
@@ -380,6 +384,7 @@ export default class Renderer {
     this.innerBorder.updateGlobals(params);
     this.outerBorder.updateGlobals(params);
     this.motionVectors.updateGlobals(params);
+    this.blackHole.updateGlobals(params);
     this.titleText.updateGlobals(params);
     this.blendPattern.updateGlobals(params);
 
@@ -1104,6 +1109,14 @@ export default class Renderer {
       innerColor,
       mdVSFrameMixed.ib_size,
       mdVSFrameMixed.ob_size
+    );
+
+    // rendered into the feedback loop so the lensed light flows with the preset
+    this.blackHole.drawBlackHole(
+      this.time,
+      this.audioLevels,
+      this.fps,
+      this.prevTexture
     );
 
     if (this.supertext.startTime >= 0) {
