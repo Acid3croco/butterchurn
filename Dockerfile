@@ -51,6 +51,11 @@ COPY scripts/docker-entrypoint.sh /docker-entrypoint-butterchurn.sh
 RUN chmod +x /docker-entrypoint-butterchurn.sh
 COPY --from=build /app/dist /usr/share/nginx/html/dist
 COPY --from=build /app/examples /usr/share/nginx/html/examples
+
+# Cloudflare edge-caches /dist/ for hours regardless of origin headers, so
+# stamp the bundle URL per build: every deploy busts the old cached copy.
+RUN sed -i "s|butterchurn.min.js?v=[^\"']*|butterchurn.min.js?v=$(date +%s)|" \
+  /usr/share/nginx/html/examples/demo.html
 COPY --from=build /app/node_modules/butterchurn-presets/dist/all.js /usr/share/nginx/html/vendor/butterchurn-presets/all.js
 COPY --from=build /app/node_modules/butterchurn-presets/dist/imageData.min.js /usr/share/nginx/html/vendor/butterchurn-presets/imageData.min.js
 
