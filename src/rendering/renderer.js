@@ -1209,7 +1209,11 @@ export default class Renderer {
 
       this.bindFrambufferAndSetViewport(null, this.width, this.height);
       this.outputShader.renderQuadTexture(this.compTexture);
-      this.blackHole.drawBlackHole(this.time, this.compTexture);
+      this.blackHole.drawBlackHole(
+        this.time,
+        this.compTexture,
+        this.audio.freqArray
+      );
     } else if (this.outputFXAA) {
       this.gl.bindTexture(this.gl.TEXTURE_2D, this.compTexture);
       this.gl.generateMipmap(this.gl.TEXTURE_2D);

@@ -32,6 +32,36 @@ export default class BlackHole {
     this.smoothMid = 1;
     this.smoothTreb = 1;
 
+    // circular spectrum ring around the shadow: 48 log-spaced bars,
+    // peak-normalized on the JS side and uploaded as a 48x1 texture
+    this.numFreqBars = 48;
+    this.freqBars = new Uint8Array(this.numFreqBars);
+    this.rawBars = new Float32Array(this.numFreqBars);
+    this.dispBars = new Float32Array(this.numFreqBars);
+    this.avgBars = new Float32Array(this.numFreqBars);
+    this.freqTexture = this.gl.createTexture();
+    this.gl.bindTexture(this.gl.TEXTURE_2D, this.freqTexture);
+    this.gl.texParameteri(
+      this.gl.TEXTURE_2D,
+      this.gl.TEXTURE_MIN_FILTER,
+      this.gl.NEAREST
+    );
+    this.gl.texParameteri(
+      this.gl.TEXTURE_2D,
+      this.gl.TEXTURE_MAG_FILTER,
+      this.gl.NEAREST
+    );
+    this.gl.texParameteri(
+      this.gl.TEXTURE_2D,
+      this.gl.TEXTURE_WRAP_S,
+      this.gl.CLAMP_TO_EDGE
+    );
+    this.gl.texParameteri(
+      this.gl.TEXTURE_2D,
+      this.gl.TEXTURE_WRAP_T,
+      this.gl.CLAMP_TO_EDGE
+    );
+
     this.positions = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
     this.vertexBuf = this.gl.createBuffer();
 
@@ -89,6 +119,7 @@ export default class BlackHole {
        uniform float uPulse;
        uniform vec3 uTint;
        uniform sampler2D uBackground;
+       uniform sampler2D uFreq;
 
        // units: Schwarzschild radius rs = 1, so M = 1/2
        const float HORIZON = 1.0;
@@ -100,6 +131,9 @@ export default class BlackHole {
        // accretion disk span: ISCO to outer edge, in rs units
        const float DISK_IN = 3.0;
        const float DISK_OUT = 12.0;
+
+       // how far in front of the hole the frequency ring floats, in rs
+       const float RING_D = 6.0;
 
        // fixed upside-down view with a 20-degree disk-plane tilt
        const float ROLL = 3.14159265 + 0.34906585;
@@ -140,10 +174,13 @@ export default class BlackHole {
          // grain -- each radius orbits at its own Omega, so that pattern
          // shears into disk texture -- and a wide mip tap adds the
          // integrated glow of everything the shadow occludes.
-         vec2 srcUV = vec2(0.5) + vec2(cos(co), sin(co)) * (0.06 + 0.3 * x);
+         // inner radii sweep a wide enough circle (and a lighter mip) that
+         // the fast Omega near the ISCO shows as live, racing structure
+         // instead of a washed-out static rim
+         vec2 srcUV = vec2(0.5) + vec2(cos(co), sin(co)) * (0.12 + 0.26 * x);
          vec3 fine = texture(uBackground, srcUV).rgb;
-         vec3 wide = textureLod(uBackground, srcUV, 3.5).rgb;
-         vec3 src = fine * 1.4 + wide * 0.6;
+         vec3 wide = textureLod(uBackground, srcUV, 2.5).rgb;
+         vec3 src = fine * mix(1.7, 1.2, x) + wide * 0.5;
 
          // emissivity ~ T^4 ~ r^-3 (Shakura-Sunyaev): dense, hot inner disk
          float bright = pow(DISK_IN / r, 2.2) * smoothstep(0.0, 0.045, x)
@@ -168,6 +205,29 @@ export default class BlackHole {
          // filtered (not fed) by the music tint
          return src * mix(vec3(1.0), uTint, 0.4) * 1.4 * bright
            * pow(g, 2.0) * (0.7 + 0.6 * uPulse);
+       }
+
+       // The frequency circle: a physical ring of light hovering RING_D rs
+       // in front of the hole, facing the camera. Spectrum bars grow inward
+       // from the base circle over the shadow. Because it sits in the
+       // geodesic integration like everything else, its light bends too:
+       // rays that miss it and skim the hole show its lensed secondary
+       // images near the photon ring. Bass at the bottom, treble at the
+       // top, mirrored left/right.
+       vec3 freqRing(vec3 hit, vec3 right, vec3 up) {
+         float px = dot(hit, right);
+         float py = dot(hit, up);
+         float rho = length(vec2(px, py));
+         float a2 = atan(py, px) + 1.5707963;
+         a2 += (a2 > 3.14159265) ? -6.2831853 : 0.0;
+         float m = texture(uFreq, vec2(abs(a2) / 3.14159265, 0.5)).r;
+
+         float base = 1.9;
+         float len = 1.5 * m + 0.05;
+         float bar = smoothstep(base + 0.06, base - 0.02, rho)
+           * smoothstep(base - len - 0.12, base - len, rho);
+         float rim = exp(-abs(rho - base) * 9.0) * 0.25;
+         return uTint * (bar * (0.6 + 2.6 * m) + rim);
        }
 
        // The pulse: a colossal storm of dots linked by electric lines far
@@ -265,6 +325,15 @@ export default class BlackHole {
              transmit *= 0.55;
            }
 
+           // frequency-ring plane crossing (RING_D rs before the hole)
+           float prevAx = dot(prevPos, fwd) + RING_D;
+           float ax = dot(pos, fwd) + RING_D;
+           if (prevAx * ax < 0.0 && transmit > 0.02) {
+             float fr = prevAx / (prevAx - ax);
+             vec3 hitR = mix(prevPos, pos, fr);
+             emission += freqRing(hitR, right, up) * transmit;
+           }
+
            prevY = pos.y;
            prevPos = pos;
          }
@@ -331,6 +400,31 @@ export default class BlackHole {
       this.shaderProgram,
       "uBackground"
     );
+    this.freqLoc = this.gl.getUniformLocation(this.shaderProgram, "uFreq");
+  }
+
+  // group the FFT magnitudes into log-spaced bars; each bar is normalized
+  // against its own running average (like the bass/mid/treb levels), so
+  // quiet bands still dance and one kick can't crush the rest
+  updateFreqBars(freqArray) {
+    const bars = this.numFreqBars;
+    for (let i = 0; i < bars; i++) {
+      const lo = Math.max(1, Math.floor(256 ** (i / bars)));
+      const hi = Math.max(lo + 1, Math.floor(256 ** ((i + 1) / bars)));
+      let v = 0;
+      for (let j = lo; j < hi && j < freqArray.length; j++) {
+        v = Math.max(v, freqArray[j]);
+      }
+      this.rawBars[i] = v;
+      this.avgBars[i] = this.avgBars[i] * 0.992 + v * 0.008;
+    }
+    for (let i = 0; i < bars; i++) {
+      const rel = this.rawBars[i] / (this.avgBars[i] * 2.2 + 1e-6);
+      const m = Math.min(1, rel) ** 0.75;
+      // instant attack, slow release, like a classic analyzer
+      this.dispBars[i] = Math.max(m, this.dispBars[i] * 0.9);
+      this.freqBars[i] = Math.min(255, Math.round(this.dispBars[i] * 255));
+    }
   }
 
   updateAudio(audioLevels, fps) {
@@ -371,9 +465,13 @@ export default class BlackHole {
     return [r / maxC, g / maxC, bl / maxC];
   }
 
-  drawBlackHole(time, backgroundTexture) {
+  drawBlackHole(time, backgroundTexture, freqArray) {
     if (this.intensity < 0.01) {
       return;
+    }
+
+    if (freqArray && freqArray.length > 0) {
+      this.updateFreqBars(freqArray);
     }
 
     this.gl.useProgram(this.shaderProgram);
@@ -398,6 +496,22 @@ export default class BlackHole {
     this.gl.activeTexture(this.gl.TEXTURE0);
     this.gl.bindTexture(this.gl.TEXTURE_2D, backgroundTexture);
     this.gl.uniform1i(this.backgroundLoc, 0);
+
+    this.gl.activeTexture(this.gl.TEXTURE1);
+    this.gl.bindTexture(this.gl.TEXTURE_2D, this.freqTexture);
+    this.gl.pixelStorei(this.gl.UNPACK_ALIGNMENT, 1);
+    this.gl.texImage2D(
+      this.gl.TEXTURE_2D,
+      0,
+      this.gl.R8,
+      this.numFreqBars,
+      1,
+      0,
+      this.gl.RED,
+      this.gl.UNSIGNED_BYTE,
+      this.freqBars
+    );
+    this.gl.uniform1i(this.freqLoc, 1);
 
     this.gl.uniform4fv(
       this.texsizeLoc,
