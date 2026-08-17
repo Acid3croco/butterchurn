@@ -240,6 +240,45 @@
         transform: translate(-50%, calc(100% + 2rem));
       }
 
+      .preset-toast {
+        position: absolute;
+        left: 1.25rem;
+        bottom: 1.25rem;
+        z-index: 3;
+        display: grid;
+        gap: 0.2rem;
+        max-width: min(420px, calc(100% - 2.5rem));
+        padding: 0.7rem 0.95rem;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+        box-shadow: 0 14px 40px rgba(0, 0, 0, 0.38),
+          inset 0 1px rgba(255, 255, 255, 0.04);
+        backdrop-filter: blur(18px) saturate(130%);
+        pointer-events: none;
+        opacity: 0;
+        transform: translateY(0.5rem);
+        transition: opacity 180ms ease, transform 220ms ease;
+      }
+
+      .preset-toast[data-visible="true"] {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .preset-toast .toast-label {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.62rem;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .preset-toast .toast-message {
+        font-size: 0.85rem;
+        overflow-wrap: anywhere;
+      }
+
       .source-panel {
         display: grid;
         grid-template-columns: minmax(220px, 0.8fr) minmax(420px, 1.4fr);
@@ -864,6 +903,7 @@
         var youtubePlaylist = null;
         var youtubePlaylistIndex = 0;
         var cycleInterval = null;
+        var toastTimeout = null;
         var presets = {};
         var presetKeys = [];
         var presetIndexHist = [];
@@ -1573,6 +1613,21 @@
           }
         }
 
+        function showToast(label, message, duration) {
+          $("#presetToast .toast-label").text(label);
+          $("#presetToast .toast-message").text(message);
+          $("#presetToast").attr("data-visible", "true");
+          if (toastTimeout) clearTimeout(toastTimeout);
+          toastTimeout = setTimeout(
+            () => $("#presetToast").attr("data-visible", "false"),
+            duration
+          );
+        }
+
+        function announcePreset() {
+          showToast("Preset", presetKeys[presetIndex], 10000);
+        }
+
         function nextPreset(blendTime = 5.7) {
           presetIndexHist.push(presetIndex);
           presetIndex = presetRandom
@@ -1580,6 +1635,7 @@
             : (presetIndex + 1) % presetKeys.length;
           visualizer.loadPreset(presets[presetKeys[presetIndex]], blendTime);
           $("#presetSelect").val(presetIndex);
+          announcePreset();
         }
 
         function prevPreset(blendTime = 5.7) {
@@ -1589,6 +1645,28 @@
               : (presetIndex - 1 + presetKeys.length) % presetKeys.length;
           visualizer.loadPreset(presets[presetKeys[presetIndex]], blendTime);
           $("#presetSelect").val(presetIndex);
+          announcePreset();
+        }
+
+        function setPresetCycle(enabled) {
+          presetCycle = enabled;
+          $("#presetCycle").prop("checked", enabled);
+          restartCycleInterval();
+          showToast("Auto cycle", enabled ? "on" : "off", 2500);
+        }
+
+        function setPresetRandom(enabled) {
+          presetRandom = enabled;
+          $("#presetRandom").prop("checked", enabled);
+          showToast("Shuffle", enabled ? "on" : "off", 2500);
+        }
+
+        function setPresetCycleLength(seconds) {
+          seconds = Math.max(1, seconds);
+          presetCycleLength = seconds * 1000;
+          $("#presetCycleLength").val(seconds);
+          restartCycleInterval();
+          showToast("Auto cycle", `every ${seconds}s`, 2500);
         }
 
         function restartCycleInterval() {
@@ -1610,13 +1688,29 @@
         }
 
         $(document).keydown((event) => {
-          if (/^(INPUT|SELECT|BUTTON)$/.test(event.target.tagName)) return;
+          var controlsVisible =
+            $("#stage").attr("data-controls-visible") !== "false";
+          if (
+            controlsVisible &&
+            /^(INPUT|SELECT|BUTTON)$/.test(event.target.tagName)
+          )
+            return;
           if (event.key === " " || event.key === "ArrowRight") {
             event.preventDefault();
             nextPreset();
           } else if (event.key === "Backspace" || event.key === "ArrowLeft") {
             event.preventDefault();
             prevPreset();
+          } else if (event.key === "a" || event.key === "A") {
+            setPresetCycle(!presetCycle);
+          } else if (event.key === "s" || event.key === "S") {
+            setPresetRandom(!presetRandom);
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setPresetCycleLength(presetCycleLength / 1000 + 5);
+          } else if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setPresetCycleLength(presetCycleLength / 1000 - 5);
           }
         });
 
@@ -1624,20 +1718,19 @@
           presetIndexHist.push(presetIndex);
           presetIndex = parseInt($("#presetSelect").val(), 10);
           visualizer.loadPreset(presets[presetKeys[presetIndex]], 5.7);
+          announcePreset();
         });
-        $("#presetCycle").change(() => {
-          presetCycle = $("#presetCycle").is(":checked");
-          restartCycleInterval();
-        });
-        $("#presetCycleLength").change(() => {
-          presetCycleLength =
-            Math.max(1, parseInt($("#presetCycleLength").val(), 10) || 15) *
-            1000;
-          restartCycleInterval();
-        });
-        $("#presetRandom").change(() => {
-          presetRandom = $("#presetRandom").is(":checked");
-        });
+        $("#presetCycle").change(() =>
+          setPresetCycle($("#presetCycle").is(":checked"))
+        );
+        $("#presetCycleLength").change(() =>
+          setPresetCycleLength(
+            Math.max(1, parseInt($("#presetCycleLength").val(), 10) || 15)
+          )
+        );
+        $("#presetRandom").change(() =>
+          setPresetRandom($("#presetRandom").is(":checked"))
+        );
         $("#fpsLimit").change(() => {
           targetFPS = Math.max(0, parseInt($("#fpsLimit").val(), 10) || 0);
           lastRenderedAt = 0;
@@ -1757,6 +1850,7 @@
               "aria-label",
               controlsVisible ? "Show controls" : "Hide controls"
             );
+          document.getElementById("controlsButton").blur();
         });
 
         function initPlayer() {
@@ -2146,7 +2240,9 @@
               </label>
             </div>
           </div>
-          <span class="shortcut">← / → change preset</span>
+          <span class="shortcut"
+            >← / → preset · A auto cycle · S shuffle · ↑ / ↓ cycle time</span
+          >
         </div>
 
         <div class="performance-panel" aria-label="Rendering performance">
@@ -2177,6 +2273,17 @@
           </div>
         </div>
       </section>
+
+      <div
+        class="preset-toast"
+        id="presetToast"
+        data-visible="false"
+        role="status"
+        aria-live="polite"
+      >
+        <span class="toast-label"></span>
+        <span class="toast-message"></span>
+      </div>
     </main>
   </body>
 </html>
