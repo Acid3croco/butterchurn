@@ -135,20 +135,19 @@ export default class BlackHole {
          // co-rotating azimuth: a feature at constant co orbits at Omega(r)
          float co = phi - omega * uTime * 6.0;
 
-         // the disk is built from the light behind the hole: a wide
-         // mip-averaged sample of the frame region the shadow occludes,
-         // dragged around the disk with the Keplerian flow
+         // nothing procedural: structure and light both come from the frame
+         // behind the hole. A fine co-rotating tap carries the frame's own
+         // grain -- each radius orbits at its own Omega, so that pattern
+         // shears into disk texture -- and a wide mip tap adds the
+         // integrated glow of everything the shadow occludes.
          vec2 srcUV = vec2(0.5) + vec2(cos(co), sin(co)) * (0.06 + 0.3 * x);
-         vec3 src = textureLod(uBackground, srcUV, 3.5).rgb;
-
-         // orbiting streaks, sheared by the differential rotation
-         float s1 = 0.5 + 0.5 * sin(co * 9.0 - r * 4.0);
-         float s2 = 0.5 + 0.5 * sin(co * 23.0 + r * 11.0 + 1.7);
-         float streak = 0.35 + 1.3 * s1 * s1 + 0.5 * s2 * s2;
+         vec3 fine = texture(uBackground, srcUV).rgb;
+         vec3 wide = textureLod(uBackground, srcUV, 3.5).rgb;
+         vec3 src = fine * 1.4 + wide * 0.6;
 
          // emissivity ~ T^4 ~ r^-3 (Shakura-Sunyaev): dense, hot inner disk
          float bright = pow(DISK_IN / r, 2.2) * smoothstep(0.0, 0.045, x)
-           * smoothstep(1.0, 0.82, x) * 5.5 * streak;
+           * smoothstep(1.0, 0.82, x) * 5.5;
 
          // grazing rays cross more of the thin disk: path length ~ 1/|cos|
          float grazing = clamp(0.35 / max(abs(dir.y), 0.06), 1.0, 6.0);
@@ -167,7 +166,7 @@ export default class BlackHole {
 
          // no self-emission: the disk only re-radiates the light behind it,
          // filtered (not fed) by the music tint
-         return src * mix(vec3(1.0), uTint, 0.4) * 1.9 * bright
+         return src * mix(vec3(1.0), uTint, 0.4) * 1.4 * bright
            * pow(g, 2.0) * (0.7 + 0.6 * uPulse);
        }
 
