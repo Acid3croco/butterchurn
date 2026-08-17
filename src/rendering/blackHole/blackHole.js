@@ -104,19 +104,6 @@ export default class BlackHole {
        // fixed upside-down view with a 20-degree disk-plane tilt
        const float ROLL = 3.14159265 + 0.34906585;
 
-       float hash12(vec2 p) {
-         vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-         p3 += dot(p3, p3.yzx + 33.33);
-         return fract((p3.x + p3.y) * p3.z);
-       }
-
-       float sdSegment(vec2 p, vec2 a, vec2 b) {
-         vec2 pa = p - a;
-         vec2 ba = b - a;
-         float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
-         return length(pa - ba * h);
-       }
-
        // Accretion disk painted by the source itself: the crossing point
        // samples the preset's frame in Kepler-sheared polar coordinates, so
        // the disk's glow is literally the preset's light dragged around the
@@ -143,9 +130,12 @@ export default class BlackHole {
          // inner radii sweep a wide enough circle (and a lighter mip) that
          // the fast Omega near the ISCO shows as live, racing structure
          // instead of a washed-out static rim
+         // explicit lods: the edge-on disk compresses huge frame distances
+         // into single pixels, and implicit-derivative sampling there
+         // shimmers into sparkling lines
          vec2 srcUV = vec2(0.5) + vec2(cos(co), sin(co)) * (0.12 + 0.26 * x);
-         vec3 fine = texture(uBackground, srcUV).rgb;
-         vec3 wide = textureLod(uBackground, srcUV, 2.5).rgb;
+         vec3 fine = textureLod(uBackground, srcUV, 1.5).rgb;
+         vec3 wide = textureLod(uBackground, srcUV, 3.0).rgb;
          vec3 src = fine * mix(1.7, 1.2, x) + wide * 0.5;
 
          // emissivity ~ T^4 ~ r^-3 (Shakura-Sunyaev): dense, hot inner disk
@@ -171,35 +161,6 @@ export default class BlackHole {
          // filtered (not fed) by the music tint
          return src * mix(vec3(1.0), uTint, 0.4) * 1.4 * bright
            * pow(g, 2.0) * (0.7 + 0.6 * uPulse);
-       }
-
-       // The pulse: a colossal storm of dots linked by electric lines far
-       // behind the hole, flashing with the beat. q is the gnomonic
-       // (direction-space) coordinate of the escaped ray, so this light
-       // has felt the full gravitational deflection on its way in.
-       vec3 stormLight(vec2 q) {
-         float seed = floor(uTime * 6.0);
-         const int NP = 14;
-         vec2 pts[NP];
-         for (int i = 0; i < NP; i++) {
-           float fi = float(i);
-           float a = 6.2831853 * fi / float(NP)
-             + 0.9 * hash12(vec2(seed, fi));
-           float rad = (0.6 + 2.6 * hash12(vec2(fi + 31.0, seed)))
-             * (0.8 + 0.4 * uPulse);
-           pts[i] = vec2(cos(a), sin(a)) * rad;
-         }
-         float storm = 0.0;
-         for (int i = 0; i < NP; i++) {
-           vec2 p1 = pts[i];
-           vec2 p2 = pts[(i + 1) % NP];
-           vec2 p3 = pts[(i + 5) % NP];
-           float gate = step(0.35, hash12(vec2(seed + 7.0, float(i))));
-           float dl = min(sdSegment(q, p1, p2), sdSegment(q, p1, p3));
-           storm += gate * exp(-dl * 22.0) * 0.6;
-           storm += exp(-length(q - p1) * 14.0) * 1.4;
-         }
-         return uTint * storm * (0.15 + 1.2 * uPulse);
        }
 
        void main(void) {
@@ -283,7 +244,6 @@ export default class BlackHole {
            // gnomonic projection; strongly bent rays (bz small or negative)
            // are clamped so every escaped direction still lands on light
            vec2 q = vec2(bx, by) / max(bz, 0.05);
-           col += stormLight(q);
 
            // the source preset fills the whole sky behind the hole: every
            // photon it emits reaches us on a bent geodesic. Mirror-wrap the
@@ -292,7 +252,13 @@ export default class BlackHole {
            vec2 buv = q * focal;
            vec2 backUV = vec2((buv.x / aspect) * 0.5 + 0.5, buv.y * 0.5 + 0.5);
            backUV = abs(fract(backUV * 0.5) * 2.0 - 1.0);
-           col += texture(uBackground, backUV).rgb;
+
+           // blur with deflection: barely-bent rays stay sharp, rays that
+           // whipped around the hole average a wide patch -- physically the
+           // photon ring integrates light, and it kills sampling sparkle
+           float dev = clamp(1.0 - dot(rd, dir), 0.0, 1.0);
+           float lod = min(5.0, dev * 24.0);
+           col += textureLod(uBackground, backUV, lod).rgb;
          }
 
          fragColor = vec4(col, uIntensity);
