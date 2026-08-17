@@ -128,14 +128,31 @@ export default class BlackHole {
          }
 
          float phi = atan(pos.z, pos.x);
-         // Omega = sqrt(M/r^3), M = 1/2
+         // Omega = sqrt(M/r^3), M = 1/2: differential Keplerian rotation
          float omega = inversesqrt(2.0 * r * r * r);
          float x = (r - DISK_IN) / (DISK_OUT - DISK_IN);
 
-         float uCoord = fract(phi / 6.2831853 + omega * uTime * 2.2);
-         vec3 src = texture(uBackground, vec2(uCoord, x)).rgb;
+         // co-rotating azimuth: a feature at constant co orbits at Omega(r)
+         float co = phi - omega * uTime * 6.0;
 
-         float bright = pow(1.0 - x, 1.3) * smoothstep(0.0, 0.05, x) * 3.0;
+         // the disk is built from the light behind the hole: a wide
+         // mip-averaged sample of the frame region the shadow occludes,
+         // dragged around the disk with the Keplerian flow
+         vec2 srcUV = vec2(0.5) + vec2(cos(co), sin(co)) * (0.06 + 0.3 * x);
+         vec3 src = textureLod(uBackground, srcUV, 3.5).rgb;
+
+         // orbiting streaks, sheared by the differential rotation
+         float s1 = 0.5 + 0.5 * sin(co * 9.0 - r * 4.0);
+         float s2 = 0.5 + 0.5 * sin(co * 23.0 + r * 11.0 + 1.7);
+         float streak = 0.35 + 1.3 * s1 * s1 + 0.5 * s2 * s2;
+
+         // emissivity ~ T^4 ~ r^-3 (Shakura-Sunyaev): dense, hot inner disk
+         float bright = pow(DISK_IN / r, 2.2) * smoothstep(0.0, 0.045, x)
+           * smoothstep(1.0, 0.82, x) * 5.5 * streak;
+
+         // grazing rays cross more of the thin disk: path length ~ 1/|cos|
+         float grazing = clamp(0.35 / max(abs(dir.y), 0.06), 1.0, 6.0);
+         bright *= grazing;
 
          // disk material circular velocity: beta = sqrt(M/r)/sqrt(1 - 2M/r)
          float beta = min(
@@ -148,8 +165,10 @@ export default class BlackHole {
            / (1.0 - beta * dot(vDir, dir));
          float g = gGrav * gDopp;
 
-         return (src + uTint * 0.08) * bright * pow(g, 2.0)
-           * (0.7 + 0.6 * uPulse);
+         // no self-emission: the disk only re-radiates the light behind it,
+         // filtered (not fed) by the music tint
+         return src * mix(vec3(1.0), uTint, 0.4) * 1.9 * bright
+           * pow(g, 2.0) * (0.7 + 0.6 * uPulse);
        }
 
        // The pulse: a colossal storm of dots linked by electric lines far
@@ -244,7 +263,7 @@ export default class BlackHole {
              vec3 hit = mix(prevPos, pos, f);
              vec3 dirToCam = -normalize(vel);
              emission += diskEmission(hit, dirToCam) * transmit;
-             transmit *= 0.45;
+             transmit *= 0.55;
            }
 
            prevY = pos.y;
@@ -259,20 +278,19 @@ export default class BlackHole {
            float by = dot(dir, up);
            float bz = dot(dir, fwd);
 
-           if (bz > 0.05) {
-             // gnomonic projection: the storm shines from far behind
-             vec2 q = vec2(bx, by) / bz;
-             col += stormLight(q);
+           // gnomonic projection; strongly bent rays (bz small or negative)
+           // are clamped so every escaped direction still lands on light
+           vec2 q = vec2(bx, by) / max(bz, 0.05);
+           col += stormLight(q);
 
-             // the source preset fills the whole sky behind the hole:
-             // every photon it emits reaches us on a bent geodesic
-             vec2 buv = q * focal;
-             vec2 backUV = vec2((buv.x / aspect) * 0.5 + 0.5, buv.y * 0.5 + 0.5);
-             if (all(greaterThanEqual(backUV, vec2(0.0))) &&
-                 all(lessThanEqual(backUV, vec2(1.0)))) {
-               col += texture(uBackground, backUV).rgb;
-             }
-           }
+           // the source preset fills the whole sky behind the hole: every
+           // photon it emits reaches us on a bent geodesic. Mirror-wrap the
+           // frame so rays deflected past its edges keep sampling light
+           // instead of leaving offset dark circles around the shadow
+           vec2 buv = q * focal;
+           vec2 backUV = vec2((buv.x / aspect) * 0.5 + 0.5, buv.y * 0.5 + 0.5);
+           backUV = abs(fract(backUV * 0.5) * 2.0 - 1.0);
+           col += texture(uBackground, backUV).rgb;
          }
 
          fragColor = vec4(col, uIntensity);
