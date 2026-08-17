@@ -97,12 +97,6 @@ export default class BlackHole {
        const float ESCAPE_R = 40.0;
        const int   STEPS = 96;
 
-       // the source preset lives on a disc far behind the hole whose
-       // apparent radius matches the shadow (critical impact parameter
-       // 3*sqrt(3)/2 rs seen from CAM_DIST), so its direct image is hidden
-       // and only gravitationally bent light escapes around the shadow
-       const float Q_DISC = 0.165;
-
        // accretion disk span: ISCO to outer edge, in rs units
        const float DISK_IN = 3.0;
        const float DISK_OUT = 12.0;
@@ -121,14 +115,6 @@ export default class BlackHole {
          vec2 ba = b - a;
          float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
          return length(pa - ba * h);
-       }
-
-       vec3 starField(vec3 dir) {
-         vec2 sph = vec2(atan(dir.z, dir.x), asin(clamp(dir.y, -1.0, 1.0)));
-         vec2 sp = sph * vec2(42.0, 26.0);
-         float star = pow(hash12(floor(sp)), 60.0) * 12.0;
-         star *= smoothstep(0.8, 0.0, length(fract(sp) - 0.5));
-         return vec3(star) * vec3(0.9, 0.95, 1.0);
        }
 
        // Accretion disk painted by the source itself: the crossing point
@@ -273,19 +259,18 @@ export default class BlackHole {
            float by = dot(dir, up);
            float bz = dot(dir, fwd);
 
-           col += starField(dir);
            if (bz > 0.05) {
              // gnomonic projection: the storm shines from far behind
              vec2 q = vec2(bx, by) / bz;
              col += stormLight(q);
 
-             // the source preset, contained on the hidden disc: every
-             // photon that reaches us has been bent around the shadow
-             float ql = length(q);
-             if (ql < Q_DISC) {
-               vec2 backUV = (q / Q_DISC) * 0.5 + 0.5;
-               float rim = smoothstep(Q_DISC, Q_DISC * 0.9, ql);
-               col += texture(uBackground, backUV).rgb * rim * 2.2;
+             // the source preset fills the whole sky behind the hole:
+             // every photon it emits reaches us on a bent geodesic
+             vec2 buv = q * focal;
+             vec2 backUV = vec2((buv.x / aspect) * 0.5 + 0.5, buv.y * 0.5 + 0.5);
+             if (all(greaterThanEqual(backUV, vec2(0.0))) &&
+                 all(lessThanEqual(backUV, vec2(1.0)))) {
+               col += texture(uBackground, backUV).rgb;
              }
            }
          }
