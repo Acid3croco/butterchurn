@@ -913,8 +913,8 @@
         var presetIndexHist = [];
         var presetIndex = 0;
         var presetCycle = true;
-        var presetCycleLength = 15000;
-        var presetRandom = true;
+        var presetCycleLength = 60000;
+        var presetRandom = false;
         var blackHoleOn = false;
         var resizeFrame = null;
         var targetFPS = 0;
@@ -1792,7 +1792,7 @@
         );
         $("#presetCycleLength").change(() =>
           setPresetCycleLength(
-            Math.max(1, parseInt($("#presetCycleLength").val(), 10) || 15)
+            Math.max(1, parseInt($("#presetCycleLength").val(), 10) || 60)
           )
         );
         $("#presetRandom").change(() =>
@@ -2304,7 +2304,7 @@
                 id="presetCycleLength"
                 type="number"
                 step="1"
-                value="15"
+                value="60"
                 min="1"
                 aria-label="Seconds between presets"
               />
@@ -2318,7 +2318,6 @@
                 <input
                   id="presetRandom"
                   type="checkbox"
-                  checked
                   aria-label="Choose presets randomly"
                 />
                 <span class="toggle-track" aria-hidden="true"></span>
