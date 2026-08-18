@@ -915,6 +915,7 @@
         var presetCycle = true;
         var presetCycleLength = 15000;
         var presetRandom = true;
+        var blackHoleOn = false;
         var resizeFrame = null;
         var targetFPS = 0;
         var renderScale = 0.75;
@@ -1632,6 +1633,50 @@
           showToast("Preset", presetKeys[presetIndex], 10000);
         }
 
+        // Keep the shareable settings in the address bar. FPS limit and
+        // render quality are machine-specific, so they stay out of the URL.
+        function syncSettingsUrl() {
+          if (!presetKeys.length) return;
+          var params = new URLSearchParams(window.location.search);
+          params.set("preset", presetKeys[presetIndex]);
+          params.set("cycle", presetCycle ? "1" : "0");
+          params.set("delay", String(Math.round(presetCycleLength / 1000)));
+          params.set("shuffle", presetRandom ? "1" : "0");
+          params.set("blackhole", blackHoleOn ? "1" : "0");
+          try {
+            window.history.replaceState(
+              null,
+              "",
+              "?" + params.toString() + window.location.hash
+            );
+          } catch (error) {
+            console.debug("Settings could not be written to the URL.", error);
+          }
+        }
+
+        function readUrlFlag(params, name, fallback) {
+          var value = params.get(name);
+          if (value === "1") return true;
+          if (value === "0") return false;
+          return fallback;
+        }
+
+        function applySettingsFromUrl() {
+          var params = new URLSearchParams(window.location.search);
+          presetCycle = readUrlFlag(params, "cycle", presetCycle);
+          presetRandom = readUrlFlag(params, "shuffle", presetRandom);
+          blackHoleOn = readUrlFlag(params, "blackhole", blackHoleOn);
+          var delaySeconds = parseInt(params.get("delay"), 10);
+          if (delaySeconds >= 1)
+            presetCycleLength = Math.min(delaySeconds, 86400) * 1000;
+
+          $("#presetCycle").prop("checked", presetCycle);
+          $("#presetCycleLength").val(presetCycleLength / 1000);
+          $("#presetRandom").prop("checked", presetRandom);
+          $("#blackHoleToggle").prop("checked", blackHoleOn);
+          return params.get("preset");
+        }
+
         function nextPreset(blendTime = 5.7) {
           presetIndexHist.push(presetIndex);
           presetIndex = presetRandom
@@ -1640,6 +1685,7 @@
           visualizer.loadPreset(presets[presetKeys[presetIndex]], blendTime);
           $("#presetSelect").val(presetIndex);
           announcePreset();
+          syncSettingsUrl();
         }
 
         function prevPreset(blendTime = 5.7) {
@@ -1650,26 +1696,29 @@
           visualizer.loadPreset(presets[presetKeys[presetIndex]], blendTime);
           $("#presetSelect").val(presetIndex);
           announcePreset();
+          syncSettingsUrl();
         }
 
         function setPresetCycle(enabled) {
           presetCycle = enabled;
           $("#presetCycle").prop("checked", enabled);
           restartCycleInterval();
+          syncSettingsUrl();
           showToast("Auto cycle", enabled ? "on" : "off", 2500);
         }
 
         function setPresetRandom(enabled) {
           presetRandom = enabled;
           $("#presetRandom").prop("checked", enabled);
+          syncSettingsUrl();
           showToast("Shuffle", enabled ? "on" : "off", 2500);
         }
 
-        var blackHoleOn = false;
         function setBlackHole(enabled) {
           blackHoleOn = enabled;
           visualizer.setBlackHoleEnabled(enabled);
           $("#blackHoleToggle").prop("checked", enabled);
+          syncSettingsUrl();
           showToast("Black hole", enabled ? "on" : "off", 2500);
         }
 
@@ -1678,6 +1727,7 @@
           presetCycleLength = seconds * 1000;
           $("#presetCycleLength").val(seconds);
           restartCycleInterval();
+          syncSettingsUrl();
           showToast("Auto cycle", `every ${seconds}s`, 2500);
         }
 
@@ -1735,6 +1785,7 @@
           presetIndex = parseInt($("#presetSelect").val(), 10);
           visualizer.loadPreset(presets[presetKeys[presetIndex]], 5.7);
           announcePreset();
+          syncSettingsUrl();
         });
         $("#presetCycle").change(() =>
           setPresetCycle($("#presetCycle").is(":checked"))
@@ -1910,7 +1961,14 @@
             .fromPairs()
             .value();
           presetKeys = _.keys(presets);
-          presetIndex = Math.floor(Math.random() * presetKeys.length);
+          var sharedPreset = applySettingsFromUrl();
+          var sharedPresetIndex = sharedPreset
+            ? presetKeys.indexOf(sharedPreset)
+            : -1;
+          presetIndex =
+            sharedPresetIndex >= 0
+              ? sharedPresetIndex
+              : Math.floor(Math.random() * presetKeys.length);
 
           presetKeys.forEach((key, index) => {
             var option = document.createElement("option");
@@ -1929,7 +1987,15 @@
           });
           if (window.imageData?.default)
             visualizer.loadExtraImages(window.imageData.default);
-          nextPreset(0);
+          if (blackHoleOn) visualizer.setBlackHoleEnabled(true);
+          if (sharedPresetIndex >= 0) {
+            visualizer.loadPreset(presets[presetKeys[presetIndex]], 0);
+            $("#presetSelect").val(presetIndex);
+            announcePreset();
+            syncSettingsUrl();
+          } else {
+            nextPreset(0);
+          }
           restartCycleInterval();
           startRenderingOnce();
           window.addEventListener("resize", resizeVisualizer);
