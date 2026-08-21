@@ -132,6 +132,14 @@
         justify-content: space-between;
         gap: 1rem;
         padding: 1.25rem 1.5rem;
+        transition: opacity 260ms ease, transform 320ms ease;
+      }
+
+      .stage[data-controls-visible="false"][data-pointer-idle="true"]
+        .topbar:not(:focus-within) {
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(-100%);
       }
 
       .topbar-actions {
@@ -1903,7 +1911,11 @@
             youtubeAudio.duration;
           updateYoutubeSeekBar();
         });
-        $("#fullscreenButton").click(() => {
+        $("#fullscreenButton").click((event) => {
+          // Pointer clicks leave focus on the button, which would pin the
+          // auto-hiding top bar through :focus-within. Keyboard activation
+          // (event.detail === 0) keeps focus for accessibility.
+          if (event.detail) event.currentTarget.blur();
           if (document.fullscreenElement) document.exitFullscreen();
           else document.documentElement.requestFullscreen();
         });
@@ -1924,6 +1936,54 @@
         }
 
         $("#controlsButton").click(toggleControlsVisibility);
+
+        // Hide the top bar like a video player hides its controls: after a
+        // short idle period, or when the pointer leaves the window. The CSS
+        // only applies the hidden state while the control deck is hidden.
+        var POINTER_IDLE_DELAY = 3000;
+        var pointerIdle = null;
+        var pointerIdleTimer = null;
+        var lastPointerActivity = 0;
+
+        function setPointerIdle(idle) {
+          if (pointerIdle === idle) return;
+          pointerIdle = idle;
+          $("#stage").attr("data-pointer-idle", idle ? "true" : "false");
+        }
+
+        function armPointerIdleTimer(delay) {
+          pointerIdleTimer = setTimeout(() => {
+            var remaining =
+              lastPointerActivity + POINTER_IDLE_DELAY - Date.now();
+            if (remaining > 0) {
+              armPointerIdleTimer(remaining);
+            } else {
+              pointerIdleTimer = null;
+              setPointerIdle(true);
+            }
+          }, delay);
+        }
+
+        function wakePointer() {
+          // Runs on every pointer move; keep it cheap. The DOM attribute is
+          // only written on a state change, and the running timer is left
+          // alone — it re-arms itself for the remaining time when it fires.
+          lastPointerActivity = Date.now();
+          setPointerIdle(false);
+          if (!pointerIdleTimer) armPointerIdleTimer(POINTER_IDLE_DELAY);
+        }
+
+        function sleepPointer() {
+          clearTimeout(pointerIdleTimer);
+          pointerIdleTimer = null;
+          setPointerIdle(true);
+        }
+
+        $(document).on("pointermove pointerdown keydown", wakePointer);
+        $(window).on("focus", wakePointer);
+        $(window).on("blur", sleepPointer);
+        $(document.documentElement).on("mouseleave", sleepPointer);
+        wakePointer();
 
         function initPlayer() {
           var storedFPS = getStoredSetting("butterchurn:fps-limit", "0");
@@ -2018,7 +2078,12 @@
     </script>
   </head>
   <body>
-    <main class="stage" id="stage" data-controls-visible="true">
+    <main
+      class="stage"
+      id="stage"
+      data-controls-visible="true"
+      data-pointer-idle="false"
+    >
       <canvas
         id="canvas"
         width="1280"
