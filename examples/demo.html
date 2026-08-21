@@ -919,6 +919,8 @@
         var presets = {};
         var presetKeys = [];
         var presetIndexHist = [];
+        var presetIndexForward = [];
+        var PRESET_HISTORY_LIMIT = 200;
         var presetIndex = 0;
         var presetCycle = true;
         var presetCycleLength = 60000;
@@ -1685,26 +1687,59 @@
           return params.get("preset");
         }
 
-        function nextPreset(blendTime = 5.7) {
-          presetIndexHist.push(presetIndex);
-          presetIndex = presetRandom
-            ? Math.floor(Math.random() * presetKeys.length)
-            : (presetIndex + 1) % presetKeys.length;
+        function showPreset(index, blendTime) {
+          presetIndex = index;
           visualizer.loadPreset(presets[presetKeys[presetIndex]], blendTime);
           $("#presetSelect").val(presetIndex);
           announcePreset();
           syncSettingsUrl();
         }
 
+        function rememberPreset() {
+          presetIndexHist.push(presetIndex);
+          if (presetIndexHist.length > PRESET_HISTORY_LIMIT)
+            presetIndexHist.shift();
+        }
+
+        function randomPresetIndex() {
+          if (presetKeys.length < 2) return 0;
+          var index;
+          do {
+            index = Math.floor(Math.random() * presetKeys.length);
+          } while (index === presetIndex);
+          return index;
+        }
+
+        // Shuffle off: follow the dropdown order both ways.
+        // Shuffle on: behave like a music player. Next replays a preset we
+        // went back from, otherwise picks a random one; previous returns to
+        // the preset we just watched.
+        function nextPreset(blendTime = 5.7) {
+          rememberPreset();
+          var index;
+          if (!presetRandom) {
+            presetIndexForward = [];
+            index = (presetIndex + 1) % presetKeys.length;
+          } else if (presetIndexForward.length > 0) {
+            index = presetIndexForward.pop();
+          } else {
+            index = randomPresetIndex();
+          }
+          showPreset(index, blendTime);
+        }
+
         function prevPreset(blendTime = 5.7) {
-          presetIndex =
-            presetIndexHist.length > 0
-              ? presetIndexHist.pop()
-              : (presetIndex - 1 + presetKeys.length) % presetKeys.length;
-          visualizer.loadPreset(presets[presetKeys[presetIndex]], blendTime);
-          $("#presetSelect").val(presetIndex);
-          announcePreset();
-          syncSettingsUrl();
+          var index;
+          if (!presetRandom) {
+            presetIndexForward = [];
+            index = (presetIndex - 1 + presetKeys.length) % presetKeys.length;
+          } else if (presetIndexHist.length > 0) {
+            presetIndexForward.push(presetIndex);
+            index = presetIndexHist.pop();
+          } else {
+            index = (presetIndex - 1 + presetKeys.length) % presetKeys.length;
+          }
+          showPreset(index, blendTime);
         }
 
         function setPresetCycle(enabled) {
@@ -1760,11 +1795,15 @@
         $(document).keydown((event) => {
           var controlsVisible =
             $("#stage").attr("data-controls-visible") !== "false";
-          if (
-            controlsVisible &&
-            /^(INPUT|SELECT|BUTTON)$/.test(event.target.tagName)
-          )
-            return;
+          // Leave the keys to fields that use them: text entry and the
+          // preset dropdown. Toggles and buttons do not, so shortcuts keep
+          // working after a click on them.
+          var target = event.target;
+          var typing =
+            target.tagName === "SELECT" ||
+            (target.tagName === "INPUT" &&
+              !/^(checkbox|radio)$/.test(target.type));
+          if (controlsVisible && typing) return;
           if (event.key === " " || event.key === "ArrowRight") {
             event.preventDefault();
             nextPreset();
@@ -1789,11 +1828,9 @@
         });
 
         $("#presetSelect").change(() => {
-          presetIndexHist.push(presetIndex);
-          presetIndex = parseInt($("#presetSelect").val(), 10);
-          visualizer.loadPreset(presets[presetKeys[presetIndex]], 5.7);
-          announcePreset();
-          syncSettingsUrl();
+          rememberPreset();
+          presetIndexForward = [];
+          showPreset(parseInt($("#presetSelect").val(), 10), 5.7);
         });
         $("#presetCycle").change(() =>
           setPresetCycle($("#presetCycle").is(":checked"))
@@ -2048,14 +2085,7 @@
           if (window.imageData?.default)
             visualizer.loadExtraImages(window.imageData.default);
           if (blackHoleOn) visualizer.setBlackHoleEnabled(true);
-          if (sharedPresetIndex >= 0) {
-            visualizer.loadPreset(presets[presetKeys[presetIndex]], 0);
-            $("#presetSelect").val(presetIndex);
-            announcePreset();
-            syncSettingsUrl();
-          } else {
-            nextPreset(0);
-          }
+          showPreset(presetIndex, 0);
           restartCycleInterval();
           startRenderingOnce();
           window.addEventListener("resize", resizeVisualizer);
