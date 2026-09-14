@@ -23,19 +23,16 @@ available in a secure context (HTTPS or localhost).
 
 ## Deploy on merge
 
-The application uses Coolify's "Public GitHub" source, which has no built-in
-push-to-deploy hook, so the repository carries a plain GitHub webhook instead:
+The application (`butterchurn-viz`, the one that owns `https://viz.veyxzer.com`)
+uses the `acid3croco` GitHub App as its source, tracks `master`, and has
+*Auto Deploy* enabled. The GitHub App delivers push events to Coolify, so every
+push to `master` (a merged pull request included) starts a deployment; pushes
+to other branches are ignored. Nothing needs to be configured on the
+repository itself.
 
-- Payload URL: `https://coolify.veyxzer.com/webhooks/source/github/events/manual`
-- Content type: `application/json`
-- Secret: the application's *Manual Webhook Secret (GitHub)* from the Coolify
-  application settings (set it there first, then paste the same value here)
-- Events: push only
-
-With *Auto Deploy* enabled on the application, every push to `master` (a
-merged pull request included) starts a deployment. Pushes to other branches
-are ignored. GitHub's "Recent Deliveries" tab on the webhook shows Coolify's
-response body, which explains why a push was or was not deployed.
+If merges stop deploying, check in this order: the application's branch is
+still `master`, *Auto Deploy* is still on, and the GitHub App is still
+installed on the repository owner's account.
 
 ## Post-deploy checks
 
