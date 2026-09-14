@@ -21,6 +21,22 @@ URL. Coolify will request and renew the certificate after the hostname points
 to the server. Do not publish an HTTP-only domain: `getDisplayMedia()` is only
 available in a secure context (HTTPS or localhost).
 
+## Deploy on merge
+
+The application uses Coolify's "Public GitHub" source, which has no built-in
+push-to-deploy hook, so the repository carries a plain GitHub webhook instead:
+
+- Payload URL: `https://coolify.veyxzer.com/webhooks/source/github/events/manual`
+- Content type: `application/json`
+- Secret: the application's *Manual Webhook Secret (GitHub)* from the Coolify
+  application settings (set it there first, then paste the same value here)
+- Events: push only
+
+With *Auto Deploy* enabled on the application, every push to `master` (a
+merged pull request included) starts a deployment. Pushes to other branches
+are ignored. GitHub's "Recent Deliveries" tab on the webhook shows Coolify's
+response body, which explains why a push was or was not deployed.
+
 ## Post-deploy checks
 
 1. Open the final HTTPS URL in Chromium.
